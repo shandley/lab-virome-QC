@@ -362,11 +362,45 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ---
 
+## Contributing
+
+We welcome contributions from lab members and the community!
+
+### For Lab Members
+
+- **New to the project?** Start with [LEARNING_RESOURCES.md](docs/LEARNING_RESOURCES.md)
+- **Ready to contribute?** Read [CONTRIBUTING.md](CONTRIBUTING.md)
+- **Need help with GitHub?** See [GITHUB_SETUP.md](docs/GITHUB_SETUP.md)
+- **Questions?** Check our [Code of Conduct](CODE_OF_CONDUCT.md)
+
+### Quick Start for Contributors
+
+```bash
+# Fork and clone
+git clone https://github.com/YOUR_USERNAME/lab-virome-QC.git
+cd lab-virome-QC
+
+# Create a branch
+git checkout -b feature/my-feature
+
+# Make changes, commit, push
+git add .
+git commit -m "feat: description of changes"
+git push origin feature/my-feature
+
+# Open a Pull Request on GitHub
+```
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines.
+
+---
+
 ## Contact
 
 For questions or issues:
-- Open an [Issue](https://github.com/YOUR_USERNAME/lab-virome-QC/issues)
-- Email: your.email@institution.edu
+- Open an [Issue](https://github.com/shandley/lab-virome-QC/issues)
+- Email: scott.handley@wustl.edu
+- Lab Slack: #virome-qc
 
 ---
 
