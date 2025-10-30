@@ -1,0 +1,46 @@
+# Snakemake
+.snakemake/
+*.log
+.snakemake.log
+
+# Results and output
+results/
+data/
+resources/*.fasta
+resources/*.fa
+resources/*.fna
+
+# Conda environments
+.conda/
+.mamba/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+
+# OS
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# IDE
+.vscode/
+.idea/
+*.sublime-*
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Temporary files
+*.tmp
+*.temp
+tmp/
+temp/

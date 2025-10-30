@@ -1,0 +1,47 @@
+# =============================================================================
+# Lab Virome QC Pipeline Configuration
+# =============================================================================
+
+# Output directory
+output_dir: "results"
+
+# Quality filtering parameters
+quality_threshold: 20  # Phred quality score (Q20 = 99% accuracy)
+min_read_length: 100   # Minimum read length after trimming (higher for library prep artifacts)
+
+# Reference databases
+references:
+  # PhiX174 reference genome (Illumina sequencing control)
+  phix: "resources/phix174.fasta"
+
+  # Host genome for depletion
+  # Replace with your host organism (human, mouse, etc.)
+  host_genome: "resources/host_genome.fasta"
+
+  # rRNA database (SILVA or RDP)
+  # Download from: https://www.arb-silva.de/no_cache/download/archive/
+  rrna: "resources/silva_rrna.fasta"
+
+# Sample information
+# Can also be specified via samples.tsv (see config/samples.tsv)
+samples:
+  sample1:
+    r1: "data/raw/sample1_R1.fastq.gz"
+    r2: "data/raw/sample1_R2.fastq.gz"
+  sample2:
+    r1: "data/raw/sample2_R1.fastq.gz"
+    r2: "data/raw/sample2_R2.fastq.gz"
+
+# QC thresholds for flagging problematic samples
+qc_thresholds:
+  min_enrichment_score: 10      # ViromeQC enrichment score
+  max_host_percent: 10          # Maximum % host reads (VLP failure if exceeded)
+  max_rrna_percent: 20          # Maximum % rRNA after removal
+  min_final_reads: 100000       # Minimum reads after all QC
+  max_duplication_rate: 80      # Maximum % duplication
+
+# Computational resources
+# Adjust based on your system
+resources:
+  default_threads: 8
+  default_mem_mb: 16000
