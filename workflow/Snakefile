@@ -198,7 +198,7 @@ rule remove_phix:
         bbduk.sh \
             in1={input.r1} in2={input.r2} \
             out1={output.r1} out2={output.r2} \
-            ref={REFERENCES[phix]} \
+            ref={REFERENCES["phix"]} \
             k=31 hdist=1 \
             stats={output.stats} \
             threads={threads} \
@@ -272,7 +272,7 @@ rule remove_rrna:
         bbduk.sh \
             in1={input.r1} in2={input.r2} \
             out1={output.r1} out2={output.r2} \
-            ref={REFERENCES[rrna]} \
+            ref={REFERENCES["rrna"]} \
             k=31 \
             stats={output.stats} \
             threads={threads} \
