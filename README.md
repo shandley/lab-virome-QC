@@ -82,28 +82,40 @@ snakemake --version
 
 ### 1. Prepare Reference Databases
 
-Download required reference databases to `resources/`:
+**Quick Setup (Recommended):**
+
+Download all required reference databases with one command:
 
 ```bash
-mkdir -p resources
-
-# PhiX174 reference (Illumina control)
-# Download from NCBI or use BBTools version
-wget https://www.ncbi.nlm.nih.gov/nuccore/NC_001422.1 -O resources/phix174.fasta
-
-# Host genome (example: human GRCh38)
-# Download from Ensembl, NCBI, or UCSC
-# Example for human:
-wget ftp://ftp.ensembl.org/pub/release-110/fasta/homo_sapiens/dna/Homo_sapiens.GRCh38.dna.primary_assembly.fa.gz
-gunzip Homo_sapiens.GRCh38.dna.primary_assembly.fa.gz
-mv Homo_sapiens.GRCh38.dna.primary_assembly.fa resources/host_genome.fasta
-
-# rRNA database (SILVA)
-# Download from: https://www.arb-silva.de/no_cache/download/archive/
-# Or use pre-built BBTools database:
-wget https://drive5.com/uchime/uchime_download.html
-# Place in resources/silva_rrna.fasta
+bash scripts/setup_references.sh human
 ```
+
+This will download:
+- PhiX174 reference (~5 KB)
+- Human genome GRCh38 (~900 MB compressed, ~3 GB uncompressed)
+- SILVA rRNA database (~150 MB compressed, ~350 MB uncompressed)
+
+**Time:** 15-30 minutes depending on internet speed
+**Disk space:** ~4-5 GB total
+
+**For other organisms:**
+```bash
+bash scripts/setup_references.sh mouse    # For mouse samples
+bash scripts/setup_references.sh custom   # For custom genome (will prompt for URL)
+```
+
+**Manual/Individual Downloads:**
+
+If you prefer to download databases individually:
+
+```bash
+bash resources/download_phix.sh           # PhiX174 reference
+bash resources/download_host.sh human     # Host genome
+bash resources/download_silva.sh          # SILVA rRNA database
+```
+
+**For detailed documentation, troubleshooting, and advanced options:**
+See `resources/README.md`
 
 ### 2. Configure Sample Information
 
