@@ -165,8 +165,20 @@ snakemake --use-conda -n
 # Run locally with 8 cores
 snakemake --use-conda --cores 8
 
-# Run on HPC with SLURM
-snakemake --use-conda --profile slurm --jobs 20
+# Run on HPC with SLURM (example: HTCF at WashU)
+snakemake --profile profiles/htcf --jobs 50
+```
+
+**For HPC/cluster users:**
+- WashU HTCF users: See [docs/HTCF_USAGE.md](docs/HTCF_USAGE.md) for complete setup
+- Other clusters: The HTCF profile serves as a working example - see the [Adapting for Your Own Cluster](docs/HTCF_USAGE.md#adapting-for-your-own-cluster) section
+
+**Quick HTCF Test:**
+```bash
+# On HTCF, activate environment and run test
+source /ref/sahlab/software/miniforge3/bin/activate
+conda activate snakemake_tutorial
+bash scripts/test_htcf_run.sh
 ```
 
 ### Run Specific Steps

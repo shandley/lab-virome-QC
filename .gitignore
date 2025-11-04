@@ -3,6 +3,10 @@
 *.log
 .snakemake.log
 
+# SLURM logs (from cluster runs)
+logs/slurm/*.out
+logs/slurm/*.err
+
 # Results and output
 results/
 data/
