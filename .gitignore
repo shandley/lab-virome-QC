@@ -5,7 +5,19 @@
 
 # Results and output
 results/
-data/
+
+# Data files (keep directory structure, ignore large data files)
+data/**/*.fastq
+data/**/*.fastq.gz
+data/**/*.fq
+data/**/*.fq.gz
+data/**/*.bam
+data/**/*.sam
+# Keep documentation and placeholders
+!data/README.md
+!data/**/.gitkeep
+
+# Reference databases
 resources/*.fasta
 resources/*.fa
 resources/*.fna
