@@ -17,7 +17,7 @@ This Snakemake pipeline provides robust QC specifically designed for:
 
 ✅ **NovaSeq-specific QC** - PolyG tail removal (critical for 2-channel chemistry)
 ✅ **VLP enrichment assessment** - ViromeQC enrichment scoring
-✅ **Comprehensive contamination removal** - PhiX, host, rRNA
+✅ **Enhanced contamination removal** - Primer B (2-step), vectors/plasmids, PhiX, host, rRNA
 ✅ **Optical duplicate removal** - Illumina patterned flow cell artifacts
 ✅ **Automated QC flagging** - Pass/fail criteria for each sample
 ✅ **Rich reporting** - MultiQC dashboard with all metrics
@@ -37,17 +37,23 @@ Raw Reads (NovaSeq FASTQ)
     ↓
 [4] FastQC (trimmed reads)
     ↓
-[5] BBDuk (PhiX removal)
+[5] BBDuk (Primer B removal - left trim)
     ↓
-[6] minimap2 (host depletion) ← QC metric for VLP success
+[6] BBDuk (Primer B removal - right trim RC)
     ↓
-[7] BBDuk (rRNA removal)
+[7] BBDuk (vector/plasmid contamination removal)
     ↓
-[8] ViromeQC (enrichment assessment) ← PRIMARY QC metric
+[8] BBDuk (PhiX removal)
     ↓
-[9] FastQC (final clean reads)
+[9] minimap2 (host depletion) ← QC metric for VLP success
     ↓
-[10] MultiQC (aggregate all reports)
+[10] BBDuk (rRNA removal)
+    ↓
+[11] ViromeQC (enrichment assessment) ← PRIMARY QC metric
+    ↓
+[12] FastQC (final clean reads)
+    ↓
+[13] MultiQC (aggregate all reports)
     ↓
 Clean reads + QC reports + Sample flags
 ```
@@ -185,6 +191,8 @@ results/
 ├── fastqc/                    # FastQC reports (raw, trimmed, final)
 ├── clumpify/                  # Optical duplicate removal
 ├── fastp/                     # Adapter trimming + QC
+├── primerb_removed/           # Primer B removal (step1 & step2)
+├── vector_removed/            # Vector/plasmid contamination removal
 ├── phix_removed/              # PhiX-depleted reads
 ├── host_depleted/             # Host-depleted reads
 ├── rrna_removed/              # rRNA-depleted reads (clean)
