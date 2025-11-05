@@ -18,8 +18,10 @@ references:
   # Replace with your host organism (human, mouse, etc.)
   host_genome: "resources/host_genome.fasta"
 
-  # rRNA database (SILVA or RDP)
-  # Download from: https://www.arb-silva.de/no_cache/download/archive/
+  # rRNA database - should include both SSU (16S/18S) and LSU (23S/28S)
+  # Note: SSU-only databases (common for 16S amplicon work) will not remove LSU rRNA
+  # Recommended: SILVA SSURef + LSURef combined (see README for download instructions)
+  # Download from: https://www.arb-silva.de/download/archive/release_138_1/Exports/
   rrna: "resources/silva_rrna.fasta"
 
 # Sample information

@@ -82,6 +82,29 @@ snakemake --version
 
 ### 1. Prepare Reference Databases
 
+**rRNA Database Requirements**
+
+The rRNA removal step requires a SILVA database that includes both:
+- **SSU rRNA** (16S/18S - small subunit ribosomal RNA)
+- **LSU rRNA** (23S/28S - large subunit ribosomal RNA)
+
+Note: SSU-only databases (commonly used for 16S amplicon sequencing) will not remove LSU rRNA contamination in virome samples.
+
+**Manual download and combine SILVA databases:**
+
+```bash
+# Download SILVA 138.1 SSU (16S/18S) - NR99 version
+wget https://www.arb-silva.de/fileadmin/silva_databases/release_138_1/Exports/SILVA_138.1_SSURef_NR99_tax_silva.fasta.gz
+
+# Download SILVA 138.1 LSU (23S/28S) - NR99 version
+wget https://www.arb-silva.de/fileadmin/silva_databases/release_138_1/Exports/SILVA_138.1_LSURef_NR99_tax_silva.fasta.gz
+
+# Combine into one comprehensive database
+zcat SILVA_138.1_SSURef_NR99_tax_silva.fasta.gz SILVA_138.1_LSURef_NR99_tax_silva.fasta.gz > resources/silva_rrna.fasta
+```
+
+---
+
 **Quick Setup (Recommended):**
 
 Download all required reference databases with one command:
