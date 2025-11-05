@@ -311,6 +311,8 @@ rule remove_phix:
     threads: 4
     resources:
         mem_mb = 8000
+    params:
+        phix_ref = REFERENCES["phix"]
     conda:
         "envs/bbtools.yaml"
     shell:
@@ -318,7 +320,7 @@ rule remove_phix:
         bbduk.sh \
             in1={input.r1} in2={input.r2} \
             out1={output.r1} out2={output.r2} \
-            ref={REFERENCES["phix"]} \
+            ref={params.phix_ref} \
             k=31 hdist=1 \
             stats={output.stats} \
             threads={threads} \
@@ -385,6 +387,8 @@ rule remove_rrna:
     threads: 4
     resources:
         mem_mb = 8000
+    params:
+        rrna_ref = REFERENCES["rrna"]
     conda:
         "envs/bbtools.yaml"
     shell:
@@ -392,7 +396,7 @@ rule remove_rrna:
         bbduk.sh \
             in1={input.r1} in2={input.r2} \
             out1={output.r1} out2={output.r2} \
-            ref={REFERENCES["rrna"]} \
+            ref={params.rrna_ref} \
             k=31 \
             stats={output.stats} \
             threads={threads} \
