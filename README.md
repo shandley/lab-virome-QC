@@ -195,6 +195,26 @@ qc_thresholds:
   min_final_reads: 100000       # Minimum reads after QC
 ```
 
+### 4. Resource Requirements
+
+The pipeline is designed for NovaSeq data and requires adequate computational resources:
+
+**Memory Requirements:**
+
+| Step | Memory | Notes |
+|------|--------|-------|
+| Optical duplicate removal | 48 GB | Scales with read count (~0.5GB per million reads) |
+| Host depletion | 24 GB | Minimap2 index + read processing |
+| rRNA removal | 32 GB | 5GB for SILVA SSU+LSU database + read processing |
+| ViromeQC | 16 GB | Bowtie2/Diamond alignments |
+
+These allocations handle NovaSeq samples up to 100 million reads. For smaller datasets or resource-limited systems, you can override these values using cluster profiles (see `profile/slurm/` for examples).
+
+**Computational Resources:**
+- **Threads:** Most rules use 4-8 threads
+- **Runtime:** ~2-4 hours per sample (depends on sample size and cluster load)
+- **Storage:** ~10-20 GB per sample for intermediate files
+
 ---
 
 ## Usage
