@@ -88,6 +88,8 @@ rule clumpify_optical_duplicates:
     """
     Remove optical duplicates using Clumpify (BBTools)
     These are Illumina sequencing artifacts from patterned flow cells
+
+    Note: High-depth samples may require 24GB+ RAM
     """
     input:
         r1 = lambda wc: SAMPLES[wc.sample]["r1"],
@@ -99,7 +101,7 @@ rule clumpify_optical_duplicates:
         f"{OUTDIR}/logs/clumpify/{{sample}}.log"
     threads: 8
     resources:
-        mem_mb = 16000
+        mem_mb = 24000
     conda:
         "envs/bbtools.yaml"
     shell:
