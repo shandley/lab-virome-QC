@@ -67,8 +67,8 @@ rule fastqc_raw:
     Run FastQC on raw reads to assess initial quality and identify artifacts
     """
     input:
-        r1 = lambda wc: config["samples"][wc.sample]["r1"],
-        r2 = lambda wc: config["samples"][wc.sample]["r2"]
+        r1 = lambda wc: SAMPLES[wc.sample]["r1"],
+        r2 = lambda wc: SAMPLES[wc.sample]["r2"]
     output:
         html_r1 = f"{OUTDIR}/fastqc/raw/{{sample}}_R1_fastqc.html",
         html_r2 = f"{OUTDIR}/fastqc/raw/{{sample}}_R2_fastqc.html",
@@ -90,8 +90,8 @@ rule clumpify_optical_duplicates:
     These are Illumina sequencing artifacts from patterned flow cells
     """
     input:
-        r1 = lambda wc: config["samples"][wc.sample]["r1"],
-        r2 = lambda wc: config["samples"][wc.sample]["r2"]
+        r1 = lambda wc: SAMPLES[wc.sample]["r1"],
+        r2 = lambda wc: SAMPLES[wc.sample]["r2"]
     output:
         r1 = temp(f"{OUTDIR}/clumpify/{{sample}}_R1.fastq.gz"),
         r2 = temp(f"{OUTDIR}/clumpify/{{sample}}_R2.fastq.gz")
@@ -368,7 +368,7 @@ rule count_reads:
     Count reads at each QC step for tracking
     """
     input:
-        raw_r1 = lambda wc: config["samples"][wc.sample]["r1"],
+        raw_r1 = lambda wc: SAMPLES[wc.sample]["r1"],
         clumpify_r1 = f"{OUTDIR}/clumpify/{{sample}}_R1.fastq.gz",
         fastp_r1 = f"{OUTDIR}/fastp/{{sample}}_R1.fastq.gz",
         phix_r1 = f"{OUTDIR}/phix_removed/{{sample}}_R1.fastq.gz",
