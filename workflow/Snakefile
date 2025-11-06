@@ -315,6 +315,8 @@ rule viromeqc:
     log:
         f"{OUTDIR}/logs/viromeqc/{{sample}}.log"
     threads: 4
+    resources:
+        mem_mb = 8000
     conda:
         "envs/viromeqc.yaml"
     shell:
