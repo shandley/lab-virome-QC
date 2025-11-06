@@ -89,7 +89,8 @@ rule clumpify_optical_duplicates:
     Remove optical duplicates using Clumpify (BBTools)
     These are Illumina sequencing artifacts from patterned flow cells
 
-    Note: High-depth samples may require 24GB+ RAM
+    Note: Memory requirement scales with read count (~0.5GB per million reads)
+          Allocated 48GB to handle samples up to ~95 million reads
     """
     input:
         r1 = lambda wc: SAMPLES[wc.sample]["r1"],
@@ -101,7 +102,7 @@ rule clumpify_optical_duplicates:
         f"{OUTDIR}/logs/clumpify/{{sample}}.log"
     threads: 8
     resources:
-        mem_mb = 24000
+        mem_mb = 48000
     conda:
         "envs/bbtools.yaml"
     shell:
@@ -226,6 +227,9 @@ rule host_depletion:
     This step serves dual purpose:
     1. Remove host sequences from analysis
     2. QC metric for VLP enrichment success
+
+    Note: Minimap2 loads host genome index (~12GB for human) plus read processing
+          Allocated 24GB to handle large samples
     """
     input:
         r1 = f"{OUTDIR}/phix_removed/{{sample}}_R1.fastq.gz",
@@ -239,7 +243,7 @@ rule host_depletion:
         f"{OUTDIR}/logs/host_depletion/{{sample}}.log"
     threads: 8
     resources:
-        mem_mb = 16000
+        mem_mb = 24000
     conda:
         "envs/mapping.yaml"
     shell:
@@ -265,7 +269,9 @@ rule remove_rrna:
     Uses SILVA database for comprehensive rRNA removal
     Critical for RT-based protocols where all RNA gets converted to cDNA
 
-    Note: Full SILVA SSU+LSU database requires ~16GB RAM
+    Note: Full SILVA SSU+LSU database loads 123M kmers (~5GB)
+          Additional memory needed for read processing on large samples
+          Allocated 32GB to handle database + up to 95M reads
     """
     input:
         r1 = f"{OUTDIR}/host_depleted/{{sample}}_R1.fastq.gz",
@@ -278,7 +284,7 @@ rule remove_rrna:
         f"{OUTDIR}/logs/rrna_removal/{{sample}}.log"
     threads: 4
     resources:
-        mem_mb = 16000
+        mem_mb = 32000
     params:
         rrna_ref = REFERENCES["rrna"]
     conda:
@@ -306,6 +312,9 @@ rule viromeqc:
     - 31 prokaryotic single-copy marker genes
 
     Low enrichment score = VLP prep failure or excessive bacterial contamination
+
+    Note: Runs bowtie2 and diamond alignments which require memory for large samples
+          Allocated 16GB to handle samples up to ~95M reads
     """
     input:
         r1 = f"{OUTDIR}/rrna_removed/{{sample}}_R1.fastq.gz",
@@ -316,7 +325,7 @@ rule viromeqc:
         f"{OUTDIR}/logs/viromeqc/{{sample}}.log"
     threads: 4
     resources:
-        mem_mb = 8000
+        mem_mb = 16000
     conda:
         "envs/viromeqc.yaml"
     shell:
