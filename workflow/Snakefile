@@ -262,6 +262,8 @@ rule remove_rrna:
 
     Uses SILVA database for comprehensive rRNA removal
     Critical for RT-based protocols where all RNA gets converted to cDNA
+
+    Note: Full SILVA SSU+LSU database requires ~16GB RAM
     """
     input:
         r1 = f"{OUTDIR}/host_depleted/{{sample}}_R1.fastq.gz",
@@ -274,7 +276,7 @@ rule remove_rrna:
         f"{OUTDIR}/logs/rrna_removal/{{sample}}.log"
     threads: 4
     resources:
-        mem_mb = 8000
+        mem_mb = 16000
     params:
         rrna_ref = REFERENCES["rrna"]
     conda:
