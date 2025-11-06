@@ -21,13 +21,21 @@ License: MIT
 """
 
 import os
+import sys
 from pathlib import Path
+
+# Add scripts directory to Python path
+workflow_dir = Path(workflow.basedir)
+scripts_dir = workflow_dir / "scripts"
+sys.path.insert(0, str(scripts_dir))
+
+from sample_utils import get_samples
 
 # Configuration
 configfile: "config/config.yaml"
 
-# Sample information
-SAMPLES = config["samples"]
+# Sample information - auto-detect or use manual config
+SAMPLES = get_samples(config)
 
 # Output directory
 OUTDIR = config["output_dir"]

@@ -142,9 +142,29 @@ See `resources/README.md`
 
 ### 2. Configure Sample Information
 
-Edit `config/config.yaml` or create a sample sheet `config/samples.tsv`:
+You have three options for specifying samples:
 
-**Option A: Edit config.yaml directly**
+**Option A: Auto-detect samples from a directory (recommended for many samples)**
+
+Enable auto-detection in `config/config.yaml`:
+
+```yaml
+sample_auto_detection:
+  enabled: true
+  input_dir: "data/raw"              # Directory containing your FASTQ files
+  r1_pattern: "*_R1.fastq.gz"        # Pattern for R1 files
+  r2_pattern: "*_R2.fastq.gz"        # Pattern for R2 files
+```
+
+The pipeline will automatically find all paired-end samples matching the pattern. Common patterns:
+- `*_R1.fastq.gz` / `*_R2.fastq.gz` (default)
+- `*_R1_001.fastq.gz` / `*_R2_001.fastq.gz` (Illumina default naming)
+- `*_1.fq.gz` / `*_2.fq.gz` (short form)
+- `*.R1.fastq.gz` / `*.R2.fastq.gz` (dot separator)
+
+See `config/config_auto_detect_example.yaml` for a complete example.
+
+**Option B: Edit config.yaml directly**
 ```yaml
 samples:
   sample1:
@@ -155,7 +175,7 @@ samples:
     r2: "data/raw/sample2_R2.fastq.gz"
 ```
 
-**Option B: Use sample sheet (recommended for many samples)**
+**Option C: Use sample sheet**
 ```bash
 # Edit config/samples.tsv
 sample	r1	r2

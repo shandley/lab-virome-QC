@@ -1,6 +1,7 @@
 # =============================================================================
-# Lab Virome QC Pipeline Configuration
+# Lab Virome QC Pipeline Configuration - Auto Sample Detection Example
 # =============================================================================
+# This configuration demonstrates automatic sample detection from a directory
 
 # Output directory
 output_dir: "results"
@@ -24,35 +25,35 @@ references:
   # Download from: https://www.arb-silva.de/download/archive/release_138_1/Exports/
   rrna: "resources/silva_rrna.fasta"
 
-# Sample information
-# Two methods:
-# 1. Manual specification (below)
-# 2. Auto-detection (see sample_auto_detection section)
+# Sample information - not used when auto-detection is enabled
+samples: {}
 
-samples:
-  sample1:
-    r1: "data/raw/sample1_R1.fastq.gz"
-    r2: "data/raw/sample1_R2.fastq.gz"
-  sample2:
-    r1: "data/raw/sample2_R1.fastq.gz"
-    r2: "data/raw/sample2_R2.fastq.gz"
-
-# Auto sample detection (optional)
-# If enabled, automatically finds all paired-end samples in a directory
-# This overrides the manual 'samples' section above
+# Auto sample detection (ENABLED)
+# Automatically finds all paired-end samples in a directory
 sample_auto_detection:
-  enabled: false
-  # Directory containing fastq.gz files
+  enabled: true
+
+  # Directory containing your fastq.gz files
   input_dir: "data/raw"
+
   # Glob patterns for paired-end reads
-  # The '*' will be replaced with the sample name
-  # Common patterns:
-  #   - *_R1.fastq.gz / *_R2.fastq.gz (default)
-  #   - *_R1_001.fastq.gz / *_R2_001.fastq.gz (Illumina)
-  #   - *_1.fq.gz / *_2.fq.gz (short form)
-  #   - *.R1.fastq.gz / *.R2.fastq.gz (dot separator)
+  # The '*' wildcard will match the sample name
+  # Adjust these patterns to match your file naming convention
   r1_pattern: "*_R1.fastq.gz"
   r2_pattern: "*_R2.fastq.gz"
+
+  # Common alternative patterns:
+  # For Illumina default naming:
+  #   r1_pattern: "*_R1_001.fastq.gz"
+  #   r2_pattern: "*_R2_001.fastq.gz"
+  #
+  # For short form:
+  #   r1_pattern: "*_1.fq.gz"
+  #   r2_pattern: "*_2.fq.gz"
+  #
+  # For dot separator:
+  #   r1_pattern: "*.R1.fastq.gz"
+  #   r2_pattern: "*.R2.fastq.gz"
 
 # QC thresholds for flagging problematic samples
 qc_thresholds:
