@@ -1,0 +1,66 @@
+# =============================================================================
+# Snakemake SLURM Profile for HTCF (WashU)
+# =============================================================================
+#
+# Usage:
+#   snakemake --profile profiles/htcf --jobs 50
+#
+# This profile configures Snakemake to submit jobs to HTCF's SLURM scheduler
+#
+# Using a different cluster?
+# ---------------------------
+# This serves as a working example for SLURM clusters. To adapt for your
+# institution, copy this directory and modify:
+#   - Partition names (general, high-mem, interactive)
+#   - Memory and time defaults
+#   - tmpdir path
+#   - Add --account if required by your cluster
+#
+# See docs/HTCF_USAGE.md for detailed adaptation instructions
+# =============================================================================
+
+# Cluster submission command
+cluster: "sbatch --partition={resources.partition} --cpus-per-task={threads} --mem={resources.mem_mb}M --time={resources.time_min} --job-name={rule}.{wildcards} --output=logs/slurm/{rule}_{wildcards}.%j.out --error=logs/slurm/{rule}_{wildcards}.%j.err"
+
+# Default resources for all jobs (can be overridden per rule)
+default-resources:
+  - partition=general
+  - mem_mb=8000
+  - time_min=120
+  - tmpdir="/scratch/local"
+
+# Maximum number of jobs to submit at once
+jobs: 50
+
+# Restart jobs on failure (useful for transient SLURM errors)
+restart-times: 1
+
+# Maximum status checks per second (avoid overwhelming SLURM)
+max-status-checks-per-second: 0.5
+
+# Latency wait (seconds) - wait for output files to appear on network filesystem
+latency-wait: 60
+
+# Keep going if a job fails (set to False if you want to stop on first error)
+keep-going: False
+
+# Use conda environments
+use-conda: True
+
+# Print shell commands
+printshellcmds: True
+
+# Detailed reason for job execution
+reason: True
+
+# Show failed logs
+show-failed-logs: True
+
+# Rerun incomplete jobs
+rerun-incomplete: True
+
+# Local cores for non-cluster jobs (like aggregate rules)
+local-cores: 1
+
+# Cores available per job submission (not the total)
+cores: 1
