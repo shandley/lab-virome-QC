@@ -10,9 +10,26 @@ logs/slurm/*.err
 # Results and output
 results/
 data/
+
+# Reference databases (keep scripts and docs, ignore large files)
 resources/*.fasta
 resources/*.fa
 resources/*.fna
+resources/*.fasta.gz
+resources/*.fa.gz
+resources/*.fna.gz
+# Index files
+resources/*.mmi
+resources/*.fai
+resources/*.bwt
+resources/*.amb
+resources/*.ann
+resources/*.pac
+resources/*.sa
+# Keep documentation and scripts
+!resources/README.md
+!resources/*.sh
+!resources/VERSIONS.txt
 
 # Conda environments
 .conda/
