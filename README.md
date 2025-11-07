@@ -145,12 +145,25 @@ sample2	data/raw/sample2_R1.fastq.gz	data/raw/sample2_R2.fastq.gz
 Edit `config/config.yaml` to set custom QC thresholds:
 
 ```yaml
+# Pipeline options
+skip_clumpify: false   # Skip optical duplicate removal (see below)
+
 qc_thresholds:
   min_enrichment_score: 10      # ViromeQC enrichment score
   max_host_percent: 10          # Maximum % host reads
   max_rrna_percent: 20          # Maximum % rRNA after removal
   min_final_reads: 100000       # Minimum reads after QC
 ```
+
+**When to skip optical duplicate removal:**
+
+Set `skip_clumpify: true` in these cases:
+- **Synthetic/simulated data** (e.g., ViroForge test datasets) - no optical duplicates present
+- **Very small test datasets** (<100K reads) - clumpify may fail with assertion errors
+- **Pre-processed data** - optical duplicates already removed upstream
+- **Non-Illumina platforms** - optical duplicates are Illumina patterned flow cell artifacts
+
+**Note:** For production NovaSeq data, leave `skip_clumpify: false` (default). Optical duplicate removal is critical for NovaSeq quality control (~2-9% of reads are typically removed).
 
 ---
 

@@ -5,6 +5,9 @@
 # Output directory
 output_dir: "results"
 
+# Pipeline options
+skip_clumpify: false   # Skip optical duplicate removal (use for synthetic data or small test sets)
+
 # Quality filtering parameters
 quality_threshold: 20  # Phred quality score (Q20 = 99% accuracy)
 min_read_length: 100   # Minimum read length after trimming (higher for library prep artifacts)

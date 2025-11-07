@@ -105,6 +105,23 @@ rule clumpify_optical_duplicates:
             2>&1 | tee {log}
         """
 
+def get_fastp_input(wildcards):
+    """
+    Get fastp input files - either from clumpify (if enabled) or raw reads (if skipped)
+    """
+    if config.get("skip_clumpify", False):
+        # Skip clumpify - use raw reads directly
+        return {
+            "r1": SAMPLES[wildcards.sample]["r1"],
+            "r2": SAMPLES[wildcards.sample]["r2"]
+        }
+    else:
+        # Use clumpify output
+        return {
+            "r1": f"{OUTDIR}/clumpify/{wildcards.sample}_R1.fastq.gz",
+            "r2": f"{OUTDIR}/clumpify/{wildcards.sample}_R2.fastq.gz"
+        }
+
 rule fastp_trim:
     """
     CRITICAL STEP: fastp with NovaSeq-specific settings
@@ -116,10 +133,13 @@ rule fastp_trim:
     5. Complexity filtering
 
     This handles most NovaSeq + Illumina library prep artifacts
+
+    NOTE: Input source depends on skip_clumpify config:
+    - If skip_clumpify=false: Uses clumpify output (optical duplicates removed)
+    - If skip_clumpify=true: Uses raw reads directly (for synthetic data or small test sets)
     """
     input:
-        r1 = f"{OUTDIR}/clumpify/{{sample}}_R1.fastq.gz",
-        r2 = f"{OUTDIR}/clumpify/{{sample}}_R2.fastq.gz"
+        unpack(get_fastp_input)
     output:
         r1 = temp(f"{OUTDIR}/fastp/{{sample}}_R1.fastq.gz"),
         r2 = temp(f"{OUTDIR}/fastp/{{sample}}_R2.fastq.gz"),
@@ -351,26 +371,41 @@ rule symlink_clean_reads:
 # Reporting Rules
 # ================================================================================
 
+def get_count_reads_input(wildcards):
+    """
+    Get count_reads input files - conditionally include clumpify output if not skipped
+    """
+    inputs = {
+        "raw_r1": SAMPLES[wildcards.sample]["r1"],
+        "fastp_r1": f"{OUTDIR}/fastp/{wildcards.sample}_R1.fastq.gz",
+        "phix_r1": f"{OUTDIR}/phix_removed/{wildcards.sample}_R1.fastq.gz",
+        "host_r1": f"{OUTDIR}/host_depleted/{wildcards.sample}_R1.fastq.gz",
+        "rrna_r1": f"{OUTDIR}/rrna_removed/{wildcards.sample}_R1.fastq.gz"
+    }
+    if not config.get("skip_clumpify", False):
+        inputs["clumpify_r1"] = f"{OUTDIR}/clumpify/{wildcards.sample}_R1.fastq.gz"
+    return inputs
+
 rule count_reads:
     """
     Count reads at each QC step for tracking
+    NOTE: Clumpify step only counted if skip_clumpify=false
     """
     input:
-        raw_r1 = lambda wc: config["samples"][wc.sample]["r1"],
-        clumpify_r1 = f"{OUTDIR}/clumpify/{{sample}}_R1.fastq.gz",
-        fastp_r1 = f"{OUTDIR}/fastp/{{sample}}_R1.fastq.gz",
-        phix_r1 = f"{OUTDIR}/phix_removed/{{sample}}_R1.fastq.gz",
-        host_r1 = f"{OUTDIR}/host_depleted/{{sample}}_R1.fastq.gz",
-        rrna_r1 = f"{OUTDIR}/rrna_removed/{{sample}}_R1.fastq.gz"
+        unpack(get_count_reads_input)
     output:
         temp(f"{OUTDIR}/reports/read_counts/{{sample}}.tsv")
+    params:
+        skip_clumpify = config.get("skip_clumpify", False)
     conda:
         "envs/qc.yaml"
     shell:
         """
         echo -e "sample\tstep\treads" > {output}
         echo -e "{wildcards.sample}\traw\t$(zcat {input.raw_r1} | wc -l | awk '{{print $1/4}}')" >> {output}
-        echo -e "{wildcards.sample}\tclumpify\t$(zcat {input.clumpify_r1} | wc -l | awk '{{print $1/4}}')" >> {output}
+        if [ "{params.skip_clumpify}" = "False" ]; then
+            echo -e "{wildcards.sample}\tclumpify\t$(zcat {input.clumpify_r1} | wc -l | awk '{{print $1/4}}')" >> {output}
+        fi
         echo -e "{wildcards.sample}\tfastp\t$(zcat {input.fastp_r1} | wc -l | awk '{{print $1/4}}')" >> {output}
         echo -e "{wildcards.sample}\tphix_removed\t$(zcat {input.phix_r1} | wc -l | awk '{{print $1/4}}')" >> {output}
         echo -e "{wildcards.sample}\thost_depleted\t$(zcat {input.host_r1} | wc -l | awk '{{print $1/4}}')" >> {output}
