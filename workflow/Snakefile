@@ -403,18 +403,30 @@ rule count_reads:
         skip_clumpify = config.get("skip_clumpify", False)
     conda:
         "envs/qc.yaml"
-    shell:
-        """
-        echo -e "sample\tstep\treads" > {output}
-        echo -e "{wildcards.sample}\traw\t$(zcat {input.raw_r1} | wc -l | awk '{{print $1/4}}')" >> {output}
-        if [ "{params.skip_clumpify}" = "False" ]; then
-            echo -e "{wildcards.sample}\tclumpify\t$(zcat {input.clumpify_r1} | wc -l | awk '{{print $1/4}}')" >> {output}
-        fi
-        echo -e "{wildcards.sample}\tfastp\t$(zcat {input.fastp_r1} | wc -l | awk '{{print $1/4}}')" >> {output}
-        echo -e "{wildcards.sample}\tphix_removed\t$(zcat {input.phix_r1} | wc -l | awk '{{print $1/4}}')" >> {output}
-        echo -e "{wildcards.sample}\thost_depleted\t$(zcat {input.host_r1} | wc -l | awk '{{print $1/4}}')" >> {output}
-        echo -e "{wildcards.sample}\tclean\t$(zcat {input.rrna_r1} | wc -l | awk '{{print $1/4}}')" >> {output}
-        """
+    run:
+        import subprocess
+
+        def count_reads_in_file(filename):
+            """Count reads in a gzipped FASTQ file"""
+            result = subprocess.run(
+                f"zcat {filename} | wc -l | awk '{{print $1/4}}'",
+                shell=True, capture_output=True, text=True
+            )
+            return int(float(result.stdout.strip()))
+
+        # Write output file
+        with open(output[0], 'w') as f:
+            f.write("sample\tstep\treads\n")
+            f.write(f"{wildcards.sample}\traw\t{count_reads_in_file(input.raw_r1)}\n")
+
+            # Only count clumpify if not skipped
+            if not params.skip_clumpify and hasattr(input, 'clumpify_r1'):
+                f.write(f"{wildcards.sample}\tclumpify\t{count_reads_in_file(input.clumpify_r1)}\n")
+
+            f.write(f"{wildcards.sample}\tfastp\t{count_reads_in_file(input.fastp_r1)}\n")
+            f.write(f"{wildcards.sample}\tphix_removed\t{count_reads_in_file(input.phix_r1)}\n")
+            f.write(f"{wildcards.sample}\thost_depleted\t{count_reads_in_file(input.host_r1)}\n")
+            f.write(f"{wildcards.sample}\tclean\t{count_reads_in_file(input.rrna_r1)}\n")
 
 rule merge_read_counts:
     """
