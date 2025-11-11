@@ -82,6 +82,29 @@ snakemake --version
 
 ### 1. Prepare Reference Databases
 
+**rRNA Database Requirements**
+
+The rRNA removal step requires a SILVA database that includes both:
+- **SSU rRNA** (16S/18S - small subunit ribosomal RNA)
+- **LSU rRNA** (23S/28S - large subunit ribosomal RNA)
+
+Note: SSU-only databases (commonly used for 16S amplicon sequencing) will not remove LSU rRNA contamination in virome samples.
+
+**Manual download and combine SILVA databases:**
+
+```bash
+# Download SILVA 138.1 SSU (16S/18S) - NR99 version
+wget https://www.arb-silva.de/fileadmin/silva_databases/release_138_1/Exports/SILVA_138.1_SSURef_NR99_tax_silva.fasta.gz
+
+# Download SILVA 138.1 LSU (23S/28S) - NR99 version
+wget https://www.arb-silva.de/fileadmin/silva_databases/release_138_1/Exports/SILVA_138.1_LSURef_NR99_tax_silva.fasta.gz
+
+# Combine into one comprehensive database
+zcat SILVA_138.1_SSURef_NR99_tax_silva.fasta.gz SILVA_138.1_LSURef_NR99_tax_silva.fasta.gz > resources/silva_rrna.fasta
+```
+
+---
+
 **Quick Setup (Recommended):**
 
 Download all required reference databases with one command:
@@ -119,9 +142,29 @@ See `resources/README.md`
 
 ### 2. Configure Sample Information
 
-Edit `config/config.yaml` or create a sample sheet `config/samples.tsv`:
+You have three options for specifying samples:
 
-**Option A: Edit config.yaml directly**
+**Option A: Auto-detect samples from a directory (recommended for many samples)**
+
+Enable auto-detection in `config/config.yaml`:
+
+```yaml
+sample_auto_detection:
+  enabled: true
+  input_dir: "data/raw"              # Directory containing your FASTQ files
+  r1_pattern: "*_R1.fastq.gz"        # Pattern for R1 files
+  r2_pattern: "*_R2.fastq.gz"        # Pattern for R2 files
+```
+
+The pipeline will automatically find all paired-end samples matching the pattern. Common patterns:
+- `*_R1.fastq.gz` / `*_R2.fastq.gz` (default)
+- `*_R1_001.fastq.gz` / `*_R2_001.fastq.gz` (Illumina default naming)
+- `*_1.fq.gz` / `*_2.fq.gz` (short form)
+- `*.R1.fastq.gz` / `*.R2.fastq.gz` (dot separator)
+
+See `config/config_auto_detect_example.yaml` for a complete example.
+
+**Option B: Edit config.yaml directly**
 ```yaml
 samples:
   sample1:
@@ -132,7 +175,7 @@ samples:
     r2: "data/raw/sample2_R2.fastq.gz"
 ```
 
-**Option B: Use sample sheet (recommended for many samples)**
+**Option C: Use sample sheet**
 ```bash
 # Edit config/samples.tsv
 sample	r1	r2
@@ -151,6 +194,26 @@ qc_thresholds:
   max_rrna_percent: 20          # Maximum % rRNA after removal
   min_final_reads: 100000       # Minimum reads after QC
 ```
+
+### 4. Resource Requirements
+
+The pipeline is designed for NovaSeq data and requires adequate computational resources:
+
+**Memory Requirements:**
+
+| Step | Memory | Notes |
+|------|--------|-------|
+| Optical duplicate removal | 48 GB | Scales with read count (~0.5GB per million reads) |
+| Host depletion | 24 GB | Minimap2 index + read processing |
+| rRNA removal | 32 GB | 5GB for SILVA SSU+LSU database + read processing |
+| ViromeQC | 16 GB | Bowtie2/Diamond alignments |
+
+These allocations handle NovaSeq samples up to 100 million reads. For smaller datasets or resource-limited systems, you can override these values using cluster profiles (see `profile/slurm/` for examples).
+
+**Computational Resources:**
+- **Threads:** Most rules use 4-8 threads
+- **Runtime:** ~2-4 hours per sample (depends on sample size and cluster load)
+- **Storage:** ~10-20 GB per sample for intermediate files
 
 ---
 

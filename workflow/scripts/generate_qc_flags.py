@@ -47,8 +47,8 @@ def main():
     # Initialize results
     results = []
 
-    # Process each sample
-    samples = config['samples'].keys()
+    # Process each sample - extract from read counts file
+    samples = read_df['sample'].unique()
 
     for sample in samples:
         flags = {
