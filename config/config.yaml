@@ -15,6 +15,10 @@ references:
   # Provided in workflow/databases/ - no download needed
   phix: "workflow/databases/phix174.fasta"
 
+  # Vector/plasmid contamination database
+  # Provided in workflow/databases/ - no download needed
+  vector_contaminants: "workflow/databases/vector_contaminants.fa"
+
   # Host genome for depletion
   # Replace with your host organism (human, mouse, etc.)
   host_genome: "resources/host_genome.fasta"

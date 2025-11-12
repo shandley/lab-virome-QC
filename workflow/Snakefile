@@ -249,6 +249,8 @@ rule flag_univec:
     threads: 4
     resources:
         mem_mb = 8000
+    params:
+        vector_ref = REFERENCES["vector_contaminants"]
     conda:
         "envs/bbtools.yaml"
     shell:
@@ -256,7 +258,7 @@ rule flag_univec:
         # Run bbduk in stats-only mode to detect vector contamination
         bbduk.sh \
             in1={input.r1} in2={input.r2} \
-            ref=workflow/databases/vector_contaminants.fa \
+            ref={params.vector_ref} \
             k=31 hdist=1 \
             stats={output.stats} \
             threads={threads} \
