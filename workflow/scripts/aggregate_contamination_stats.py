@@ -15,8 +15,11 @@ def parse_bbduk_stats(stats_file):
     """
     Parse BBDuk stats file to extract contamination metrics
 
-    BBDuk stats format:
-    #File	reads	bases	...
+    BBDuk stats format (newer versions):
+    #Total	10000
+    #Matched	150	0.01500%
+
+    Or older format:
     Input:	10000	1500000	...
     Match:	150	22500	...
 
@@ -30,19 +33,33 @@ def parse_bbduk_stats(stats_file):
         for line in f:
             line = line.strip()
 
-            # Skip comments and empty lines
-            if not line or line.startswith('#'):
+            # Skip empty lines
+            if not line:
                 continue
 
-            # Parse Input line
-            if line.startswith('Input:'):
+            # Parse newer BBDuk format (with #Total and #Matched)
+            if line.startswith('#Total'):
                 parts = line.split('\t')
                 try:
                     input_reads = int(parts[1])
                 except (ValueError, IndexError):
                     pass
 
-            # Parse Match line (reads matching contaminants)
+            elif line.startswith('#Matched'):
+                parts = line.split('\t')
+                try:
+                    match_reads = int(parts[1])
+                except (ValueError, IndexError):
+                    pass
+
+            # Parse older BBDuk format (with Input: and Match:)
+            elif line.startswith('Input:'):
+                parts = line.split('\t')
+                try:
+                    input_reads = int(parts[1])
+                except (ValueError, IndexError):
+                    pass
+
             elif line.startswith('Match:') or line.startswith('Matched:'):
                 parts = line.split('\t')
                 try:
