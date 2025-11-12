@@ -99,38 +99,82 @@ def main():
     # Write to file
     results_df.to_csv(output_file, sep='\t', index=False, float_format='%.3f')
 
-    # Print summary
+    # Calculate statistics for outlier detection
+    import numpy as np
+
+    def identify_outliers(series, method='iqr'):
+        """
+        Identify statistical outliers using IQR method
+        Returns boolean mask of outliers
+        """
+        if len(series) < 4:
+            # Not enough samples for meaningful outlier detection
+            return pd.Series([False] * len(series), index=series.index)
+
+        Q1 = series.quantile(0.25)
+        Q3 = series.quantile(0.75)
+        IQR = Q3 - Q1
+
+        # Outliers are values beyond 1.5 * IQR from Q1/Q3
+        lower_bound = Q1 - 1.5 * IQR
+        upper_bound = Q3 + 1.5 * IQR
+
+        return (series < lower_bound) | (series > upper_bound)
+
+    # Identify outliers for each contamination type
+    results_df['phix_outlier'] = identify_outliers(results_df['phix_percent'])
+    results_df['vector_outlier'] = identify_outliers(results_df['vector_percent'])
+    results_df['total_outlier'] = identify_outliers(results_df['total_contamination_percent'])
+
+    # Print summary statistics
     print("\n" + "="*80)
-    print("CONTAMINATION FLAGGING SUMMARY")
+    print("CONTAMINATION SUMMARY - Identifying Outliers Within This Run")
     print("="*80)
     print(f"\nTotal samples: {len(results_df)}")
-    print(f"\nPhiX contamination:")
-    print(f"  Mean: {results_df['phix_percent'].mean():.3f}%")
-    print(f"  Median: {results_df['phix_percent'].median():.3f}%")
-    print(f"  Max: {results_df['phix_percent'].max():.3f}% ({results_df.loc[results_df['phix_percent'].idxmax(), 'sample']})")
-    print(f"\nVector contamination:")
-    print(f"  Mean: {results_df['vector_percent'].mean():.3f}%")
-    print(f"  Median: {results_df['vector_percent'].median():.3f}%")
-    print(f"  Max: {results_df['vector_percent'].max():.3f}% ({results_df.loc[results_df['vector_percent'].idxmax(), 'sample']})")
-    print(f"\nTotal contamination:")
-    print(f"  Mean: {results_df['total_contamination_percent'].mean():.3f}%")
-    print(f"  Median: {results_df['total_contamination_percent'].median():.3f}%")
-    print(f"  Max: {results_df['total_contamination_percent'].max():.3f}%")
 
-    # Flag high contamination samples (>1% for either category)
-    high_phix = results_df[results_df['phix_percent'] > 1.0]
-    high_vector = results_df[results_df['vector_percent'] > 1.0]
+    print(f"\n{'PhiX contamination:':<30}")
+    print(f"  {'Median:':<15} {results_df['phix_percent'].median():.3f}%")
+    print(f"  {'Mean ± StdDev:':<15} {results_df['phix_percent'].mean():.3f}% ± {results_df['phix_percent'].std():.3f}%")
+    print(f"  {'Range:':<15} {results_df['phix_percent'].min():.3f}% - {results_df['phix_percent'].max():.3f}%")
+    print(f"  {'25-75th %ile:':<15} {results_df['phix_percent'].quantile(0.25):.3f}% - {results_df['phix_percent'].quantile(0.75):.3f}%")
 
-    if len(high_phix) > 0:
-        print(f"\n⚠️  Samples with >1% PhiX contamination ({len(high_phix)}):")
-        for _, row in high_phix.iterrows():
-            print(f"  {row['sample']}: {row['phix_percent']:.3f}%")
+    print(f"\n{'Vector contamination:':<30}")
+    print(f"  {'Median:':<15} {results_df['vector_percent'].median():.3f}%")
+    print(f"  {'Mean ± StdDev:':<15} {results_df['vector_percent'].mean():.3f}% ± {results_df['vector_percent'].std():.3f}%")
+    print(f"  {'Range:':<15} {results_df['vector_percent'].min():.3f}% - {results_df['vector_percent'].max():.3f}%")
+    print(f"  {'25-75th %ile:':<15} {results_df['vector_percent'].quantile(0.25):.3f}% - {results_df['vector_percent'].quantile(0.75):.3f}%")
 
-    if len(high_vector) > 0:
-        print(f"\n⚠️  Samples with >1% vector contamination ({len(high_vector)}):")
-        for _, row in high_vector.iterrows():
-            print(f"  {row['sample']}: {row['vector_percent']:.3f}%")
+    # Report statistical outliers
+    phix_outliers = results_df[results_df['phix_outlier']]
+    vector_outliers = results_df[results_df['vector_outlier']]
+    total_outliers = results_df[results_df['total_outlier']]
 
+    print(f"\n{'STATISTICAL OUTLIERS (>1.5 IQR from median):':<50}")
+    print("-" * 80)
+
+    if len(phix_outliers) > 0:
+        print(f"\nPhiX outliers ({len(phix_outliers)} samples):")
+        for _, row in phix_outliers.iterrows():
+            fold_vs_median = row['phix_percent'] / results_df['phix_percent'].median() if results_df['phix_percent'].median() > 0 else float('inf')
+            print(f"  {row['sample']:<30} {row['phix_percent']:>7.3f}%  ({fold_vs_median:.1f}x median)")
+    else:
+        print(f"\nNo PhiX outliers detected (all samples within expected range)")
+
+    if len(vector_outliers) > 0:
+        print(f"\nVector outliers ({len(vector_outliers)} samples):")
+        for _, row in vector_outliers.iterrows():
+            fold_vs_median = row['vector_percent'] / results_df['vector_percent'].median() if results_df['vector_percent'].median() > 0 else float('inf')
+            print(f"  {row['sample']:<30} {row['vector_percent']:>7.3f}%  ({fold_vs_median:.1f}x median)")
+    else:
+        print(f"\nNo vector outliers detected (all samples within expected range)")
+
+    if len(total_outliers) > 0 and not (set(total_outliers['sample']) <= set(phix_outliers['sample']) | set(vector_outliers['sample'])):
+        print(f"\nTotal contamination outliers ({len(total_outliers)} samples):")
+        for _, row in total_outliers.iterrows():
+            print(f"  {row['sample']:<30} {row['total_contamination_percent']:>7.3f}%")
+
+    print("\n" + "="*80)
+    print("TIP: Check visualizations to identify samples that deviate from the group")
     print("="*80 + "\n")
 
 

@@ -99,6 +99,15 @@ snakemake --use-conda \
 
 ### Interpreting Results
 
+**Philosophy: Relative Comparison, Not Fixed Thresholds**
+
+The contamination flagging system uses **statistical outlier detection** rather than fixed thresholds. This is important because:
+- Normal contamination levels vary between sequencing runs
+- PhiX spike-in amounts differ across facilities
+- What matters is identifying samples that are *different from the rest of the batch*
+
+**Example:** If 50 samples have 0.5-2% PhiX and one sample has 35% PhiX, that outlier should stand out clearly in the visualizations.
+
 #### Contamination Summary Table
 
 **Location:** `results/reports/contamination_summary.tsv`
@@ -112,31 +121,66 @@ snakemake --use-conda \
 - `vector_percent`: % reads matching vectors/plasmids
 - `total_contamination_percent`: Combined contamination level
 
-**Interpretation:**
-- **<0.1%**: Normal background (typical for most virome samples)
-- **0.1-1%**: Moderate contamination (monitor)
-- **>1%**: High contamination (investigate sample)
-- **>5%**: Very high contamination (potential sequencing or library prep issue)
+**Statistical Outliers (IQR Method):**
 
-#### Visualizations
+The pipeline identifies outliers using the Interquartile Range (IQR) method:
+- Calculate Q1 (25th percentile) and Q3 (75th percentile)
+- IQR = Q3 - Q1
+- Outliers are values > Q3 + 1.5×IQR or < Q1 - 1.5×IQR
 
-1. **Bar Plot** (`contamination_bars.png`)
-   - Shows contamination levels for each sample
-   - Samples sorted by total contamination
-   - Helps identify outliers at a glance
+This is a standard statistical method that adapts to your data, regardless of whether your run has 0.1% or 5% median contamination.
 
-2. **Box Plot** (`contamination_boxes.png`)
-   - Shows distribution of PhiX and vector contamination across all samples
-   - Useful for understanding typical contamination levels
+**Console Output Example:**
+```
+CONTAMINATION SUMMARY - Identifying Outliers Within This Run
+================================================================================
+Total samples: 48
 
-3. **Scatter Plot** (`contamination_scatter.png`)
-   - Shows relationship between PhiX and vector contamination
-   - Outliers are labeled
-   - Can reveal if contamination types co-occur
+PhiX contamination:
+  Median:         0.850%
+  Mean ± StdDev:  1.203% ± 2.145%
+  Range:          0.120% - 12.450%
+  25-75th %ile:   0.450% - 1.320%
 
-4. **Heatmap** (`contamination_heatmap.png`)
-   - Overview of contamination patterns across all samples
-   - Easy to spot samples with elevated contamination
+STATISTICAL OUTLIERS (>1.5 IQR from median):
+--------------------------------------------------------------------------------
+
+PhiX outliers (2 samples):
+  sample_042                       12.450%  (14.6x median)
+  sample_017                        4.230%  (5.0x median)
+
+No vector outliers detected (all samples within expected range)
+```
+
+#### Visualizations - Designed for Outlier Detection
+
+All plots use the same statistical outlier detection method and are designed to make deviations from the group visually obvious:
+
+1. **Bar Plot** (`contamination_bars.png`) - **Best for quick visual screening**
+   - **Outliers:** Shown in darker colors (orange/magenta vs. yellow/blue)
+   - **Outlier labels:** Sample names in red and bold
+   - **Reference lines:** Gray dashed line shows median, shaded region shows 25-75th percentile
+   - **Use case:** Quick scan to identify which samples deviate from the group
+
+2. **Box Plot** (`contamination_boxes.png`) - **Best for understanding distribution**
+   - **Three panels:** PhiX, Vector, and Total contamination
+   - **Outliers:** Marked as red diamonds beyond the whiskers
+   - **Statistics:** Median and IQR displayed in each panel
+   - **Outlier count:** Shown in subplot titles
+   - **Use case:** Understand the typical range and identify extreme values
+
+3. **Scatter Plot** (`contamination_scatter.png`) - **Best for correlation analysis**
+   - **Outliers:** Shown as red-bordered diamonds with labels
+   - **Labels show:** Sample name and fold-change vs. median (e.g., "12.3x")
+   - **Reference lines:** Gray dashed lines show median for each axis
+   - **Color scale:** Total contamination (darker = higher)
+   - **Use case:** See if PhiX and vector contamination correlate, identify samples high in either
+
+4. **Heatmap** (`contamination_heatmap.png`) - **Best for batch overview**
+   - **Samples sorted:** Left to right by total contamination (high to low)
+   - **Outliers:** Red boxes around outlier columns, red/bold sample names
+   - **Values shown:** Actual percentages annotated in each cell
+   - **Use case:** Quick overview of the entire batch, spot patterns
 
 ## Technical Details
 
@@ -177,14 +221,23 @@ This should include common contaminants:
 
 2. **Better for virome analysis**: VLP-enriched samples should have minimal contamination anyway, so removal is often unnecessary
 
-3. **QC metric**: Contamination levels serve as a quality control indicator:
-   - High PhiX: Potential sequencing run issue
-   - High vector: Potential library prep contamination
-   - Pattern detection: Batch effects, problematic samples
+3. **Outlier-based QC**: Statistical outlier detection adapts to your data:
+   - No arbitrary fixed thresholds (e.g., ">1% is bad")
+   - Identifies samples that deviate from the batch
+   - Works regardless of sequencing run contamination baseline
+   - Example: In a run where all samples have 5% PhiX, none are flagged as outliers
 
-4. **Flexibility**: Researchers can decide post-hoc whether to exclude samples based on contamination levels
+4. **Interpretable results**: Contamination levels serve as quality indicators:
+   - High PhiX outliers: Potential sequencing run issue or incomplete PhiX cleanup
+   - High vector outliers: Potential library prep contamination
+   - Pattern detection: Batch effects, systematic issues
 
-5. **Transparency**: All reads retained for downstream analysis, but contamination is documented
+5. **Flexibility**: Researchers can decide post-hoc whether to exclude samples based on:
+   - Statistical outlier status
+   - Absolute contamination levels
+   - Study-specific tolerance thresholds
+
+6. **Transparency**: All reads retained for downstream analysis, but contamination is documented
 
 ## Files Modified
 
