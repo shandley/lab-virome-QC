@@ -54,21 +54,34 @@ def plot_contamination_bars(df, output_prefix):
     phix_colors = ['#D55E00' if outlier else '#E69F00' for outlier in df_sorted['is_outlier']]
     vector_colors = ['#CC79A7' if outlier else '#56B4E9' for outlier in df_sorted['is_outlier']]
 
-    ax.bar(x, df_sorted['phix_percent'], width, label='PhiX', color=phix_colors, alpha=0.8,
+    # Plot bars (without label - we'll add custom legend)
+    ax.bar(x, df_sorted['phix_percent'], width, color=phix_colors, alpha=0.8,
            edgecolor='black', linewidth=0.5)
     ax.bar(x, df_sorted['vector_percent'], width,
-           bottom=df_sorted['phix_percent'], label='Vector/Plasmid',
+           bottom=df_sorted['phix_percent'],
            color=vector_colors, alpha=0.8, edgecolor='black', linewidth=0.5)
 
     # Add median reference line
     median_total = df['total_contamination_percent'].median()
-    ax.axhline(y=median_total, color='gray', linestyle='--', linewidth=1.5, alpha=0.7,
-               label=f'Median ({median_total:.2f}%)')
+    ax.axhline(y=median_total, color='gray', linestyle='--', linewidth=1.5, alpha=0.7)
 
     # Add IQR shaded region
     Q1 = df['total_contamination_percent'].quantile(0.25)
     Q3 = df['total_contamination_percent'].quantile(0.75)
-    ax.axhspan(Q1, Q3, alpha=0.1, color='gray', label='25-75th percentile')
+    ax.axhspan(Q1, Q3, alpha=0.1, color='gray')
+
+    # Create custom legend with all color variations
+    from matplotlib.patches import Patch
+    legend_elements = [
+        Patch(facecolor='#E69F00', edgecolor='black', alpha=0.8, label='PhiX (normal)'),
+        Patch(facecolor='#D55E00', edgecolor='black', alpha=0.8, label='PhiX (outlier)'),
+        Patch(facecolor='#56B4E9', edgecolor='black', alpha=0.8, label='Vector (normal)'),
+        Patch(facecolor='#CC79A7', edgecolor='black', alpha=0.8, label='Vector (outlier)'),
+        plt.Line2D([0], [0], color='gray', linestyle='--', linewidth=1.5, alpha=0.7,
+                   label=f'Median ({median_total:.2f}%)'),
+        Patch(facecolor='gray', alpha=0.1, label='25-75th percentile')
+    ]
+    ax.legend(handles=legend_elements, loc='upper left', frameon=True, fancybox=True, fontsize=9)
 
     # Formatting
     ax.set_xlabel('Sample', fontsize=12, fontweight='bold')
