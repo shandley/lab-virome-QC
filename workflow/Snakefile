@@ -56,7 +56,14 @@ rule all:
         # Read count tracking
         f"{OUTDIR}/reports/read_counts.tsv",
         # Sample QC flags
-        f"{OUTDIR}/reports/sample_qc_flags.tsv"
+        f"{OUTDIR}/reports/sample_qc_flags.tsv",
+        # Contamination flagging summary
+        f"{OUTDIR}/reports/contamination_summary.tsv",
+        # Contamination plots
+        f"{OUTDIR}/reports/contamination_bars.png",
+        f"{OUTDIR}/reports/contamination_boxes.png",
+        f"{OUTDIR}/reports/contamination_scatter.png",
+        f"{OUTDIR}/reports/contamination_heatmap.png"
 
 # ================================================================================
 # QC Rules
@@ -185,20 +192,23 @@ rule fastqc_trimmed:
         fastqc -t {threads} -o $(dirname {output.html_r1}) {input.r1} {input.r2} 2>&1 | tee {log}
         """
 
-rule remove_phix:
+rule flag_phix:
     """
-    Remove PhiX174 control sequences using BBDuk (k-mer based)
-    PhiX is commonly spiked into Illumina runs as internal control
+    Flag PhiX174 contamination without removing reads
+
+    For VLP-enriched viromes, we flag contamination rather than remove it to avoid
+    accidentally discarding legitimate viral sequences. This generates QC metrics
+    to identify samples with abnormal PhiX levels (which may indicate sequencing issues).
+
+    Uses BBDuk in detection-only mode to quantify PhiX contamination.
     """
     input:
         r1 = f"{OUTDIR}/fastp/{{sample}}_R1.fastq.gz",
         r2 = f"{OUTDIR}/fastp/{{sample}}_R2.fastq.gz"
     output:
-        r1 = temp(f"{OUTDIR}/phix_removed/{{sample}}_R1.fastq.gz"),
-        r2 = temp(f"{OUTDIR}/phix_removed/{{sample}}_R2.fastq.gz"),
-        stats = f"{OUTDIR}/phix_removed/{{sample}}_phix_stats.txt"
+        stats = f"{OUTDIR}/contamination_flagging/phix/{{sample}}_phix_stats.txt"
     log:
-        f"{OUTDIR}/logs/phix_removal/{{sample}}.log"
+        f"{OUTDIR}/logs/flag_phix/{{sample}}.log"
     threads: 4
     resources:
         mem_mb = 8000
@@ -208,10 +218,45 @@ rule remove_phix:
         "envs/bbtools.yaml"
     shell:
         """
+        # Run bbduk in stats-only mode (no read filtering)
+        # Redirect stdout to /dev/null since we only want stats
         bbduk.sh \
             in1={input.r1} in2={input.r2} \
-            out1={output.r1} out2={output.r2} \
             ref={params.phix_ref} \
+            k=31 hdist=1 \
+            stats={output.stats} \
+            threads={threads} \
+            -Xmx{resources.mem_mb}m \
+            2>&1 | tee {log}
+        """
+
+rule flag_univec:
+    """
+    Flag vector/plasmid contamination without removing reads
+
+    Checks for common cloning vectors, plasmids, and synthetic sequences that may
+    indicate laboratory contamination. Generates QC metrics to identify outlier samples.
+
+    Uses comprehensive UniVec-derived database including common lab vectors.
+    """
+    input:
+        r1 = f"{OUTDIR}/fastp/{{sample}}_R1.fastq.gz",
+        r2 = f"{OUTDIR}/fastp/{{sample}}_R2.fastq.gz"
+    output:
+        stats = f"{OUTDIR}/contamination_flagging/univec/{{sample}}_univec_stats.txt"
+    log:
+        f"{OUTDIR}/logs/flag_univec/{{sample}}.log"
+    threads: 4
+    resources:
+        mem_mb = 8000
+    conda:
+        "envs/bbtools.yaml"
+    shell:
+        """
+        # Run bbduk in stats-only mode to detect vector contamination
+        bbduk.sh \
+            in1={input.r1} in2={input.r2} \
+            ref=workflow/databases/vector_contaminants.fa \
             k=31 hdist=1 \
             stats={output.stats} \
             threads={threads} \
@@ -228,13 +273,17 @@ rule host_depletion:
     1. Remove host sequences from analysis
     2. QC metric for VLP enrichment success
 
+    Note: Now operates directly on fastp output (PhiX/vector flagging doesn't filter reads)
     Note: Minimap2 loads host genome index (~12GB for human) plus read processing
           Allocated 24GB to handle large samples
     """
     input:
-        r1 = f"{OUTDIR}/phix_removed/{{sample}}_R1.fastq.gz",
-        r2 = f"{OUTDIR}/phix_removed/{{sample}}_R2.fastq.gz",
-        host_ref = REFERENCES["host_genome"]
+        r1 = f"{OUTDIR}/fastp/{{sample}}_R1.fastq.gz",
+        r2 = f"{OUTDIR}/fastp/{{sample}}_R2.fastq.gz",
+        host_ref = REFERENCES["host_genome"],
+        # Ensure contamination flagging happens first (for workflow ordering)
+        phix_stats = f"{OUTDIR}/contamination_flagging/phix/{{sample}}_phix_stats.txt",
+        univec_stats = f"{OUTDIR}/contamination_flagging/univec/{{sample}}_univec_stats.txt"
     output:
         r1 = temp(f"{OUTDIR}/host_depleted/{{sample}}_R1.fastq.gz"),
         r2 = temp(f"{OUTDIR}/host_depleted/{{sample}}_R2.fastq.gz"),
@@ -381,12 +430,13 @@ rule symlink_clean_reads:
 rule count_reads:
     """
     Count reads at each QC step for tracking
+
+    Note: phix_removed step removed since we now flag instead of filter
     """
     input:
         raw_r1 = lambda wc: SAMPLES[wc.sample]["r1"],
         clumpify_r1 = f"{OUTDIR}/clumpify/{{sample}}_R1.fastq.gz",
         fastp_r1 = f"{OUTDIR}/fastp/{{sample}}_R1.fastq.gz",
-        phix_r1 = f"{OUTDIR}/phix_removed/{{sample}}_R1.fastq.gz",
         host_r1 = f"{OUTDIR}/host_depleted/{{sample}}_R1.fastq.gz",
         rrna_r1 = f"{OUTDIR}/rrna_removed/{{sample}}_R1.fastq.gz"
     output:
@@ -399,7 +449,6 @@ rule count_reads:
         echo -e "{wildcards.sample}\traw\t$(zcat {input.raw_r1} | wc -l | awk '{{print $1/4}}')" >> {output}
         echo -e "{wildcards.sample}\tclumpify\t$(zcat {input.clumpify_r1} | wc -l | awk '{{print $1/4}}')" >> {output}
         echo -e "{wildcards.sample}\tfastp\t$(zcat {input.fastp_r1} | wc -l | awk '{{print $1/4}}')" >> {output}
-        echo -e "{wildcards.sample}\tphix_removed\t$(zcat {input.phix_r1} | wc -l | awk '{{print $1/4}}')" >> {output}
         echo -e "{wildcards.sample}\thost_depleted\t$(zcat {input.host_r1} | wc -l | awk '{{print $1/4}}')" >> {output}
         echo -e "{wildcards.sample}\tclean\t$(zcat {input.rrna_r1} | wc -l | awk '{{print $1/4}}')" >> {output}
         """
@@ -417,6 +466,48 @@ rule merge_read_counts:
         head -n 1 {input[0]} > {output}
         tail -n +2 -q {input} >> {output}
         """
+
+rule aggregate_contamination_stats:
+    """
+    Aggregate PhiX and vector contamination statistics across all samples
+
+    Parses BBDuk stats files to create a summary table showing contamination
+    levels per sample. This helps identify outlier samples with abnormal
+    contamination that may indicate sequencing or library prep issues.
+    """
+    input:
+        phix_stats = expand(f"{OUTDIR}/contamination_flagging/phix/{{sample}}_phix_stats.txt", sample=SAMPLES),
+        univec_stats = expand(f"{OUTDIR}/contamination_flagging/univec/{{sample}}_univec_stats.txt", sample=SAMPLES)
+    output:
+        f"{OUTDIR}/reports/contamination_summary.tsv"
+    conda:
+        "envs/qc.yaml"
+    script:
+        "scripts/aggregate_contamination_stats.py"
+
+rule plot_contamination:
+    """
+    Generate contamination visualization plots
+
+    Creates multiple plot types to help identify outlier samples:
+    - Bar plot: contamination levels per sample
+    - Box plot: distribution of contamination levels
+    - Scatter plot: correlation between PhiX and vector contamination
+    - Heatmap: overview of contamination across all samples
+    """
+    input:
+        f"{OUTDIR}/reports/contamination_summary.tsv"
+    output:
+        f"{OUTDIR}/reports/contamination_bars.png",
+        f"{OUTDIR}/reports/contamination_boxes.png",
+        f"{OUTDIR}/reports/contamination_scatter.png",
+        f"{OUTDIR}/reports/contamination_heatmap.png"
+    params:
+        output_prefix = f"{OUTDIR}/reports/contamination"
+    conda:
+        "envs/qc.yaml"
+    script:
+        "scripts/plot_contamination.py"
 
 rule qc_flags:
     """
@@ -439,6 +530,8 @@ rule qc_flags:
 rule multiqc:
     """
     Aggregate all QC reports into single MultiQC dashboard
+
+    Now includes contamination flagging summary
     """
     input:
         # FastQC reports
@@ -452,7 +545,9 @@ rule multiqc:
         # Read counts
         f"{OUTDIR}/reports/read_counts.tsv",
         # QC flags
-        f"{OUTDIR}/reports/sample_qc_flags.tsv"
+        f"{OUTDIR}/reports/sample_qc_flags.tsv",
+        # Contamination summary
+        f"{OUTDIR}/reports/contamination_summary.tsv"
     output:
         f"{OUTDIR}/multiqc/multiqc_report.html"
     log:
