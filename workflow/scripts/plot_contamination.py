@@ -38,7 +38,10 @@ def plot_contamination_bars(df, output_prefix):
     """
     Create stacked bar plot with outliers highlighted
     """
-    fig, ax = plt.subplots(figsize=(max(12, len(df) * 0.5), 6))
+    # Dynamic sizing based on sample count
+    n_samples = len(df)
+    fig_width = max(16, n_samples * 0.7)  # Increased from 0.5 to 0.7 per sample
+    fig, ax = plt.subplots(figsize=(fig_width, 6))
 
     # Identify outliers
     df['is_outlier'] = identify_outliers(df['total_contamination_percent'])
@@ -88,7 +91,10 @@ def plot_contamination_bars(df, output_prefix):
     ax.set_ylabel('Contamination (%)', fontsize=12, fontweight='bold')
     ax.set_title('Contamination Levels by Sample (Outliers Highlighted)', fontsize=14, fontweight='bold')
     ax.set_xticks(x)
-    ax.set_xticklabels(df_sorted['sample'], rotation=45, ha='right', fontsize=9)
+
+    # Adjust font size based on sample count
+    label_fontsize = 8 if n_samples > 40 else 9 if n_samples > 30 else 10
+    ax.set_xticklabels(df_sorted['sample'], rotation=60, ha='right', fontsize=label_fontsize)
 
     # Highlight outlier sample names in red
     for i, (idx, row) in enumerate(df_sorted.iterrows()):
@@ -96,10 +102,9 @@ def plot_contamination_bars(df, output_prefix):
             ax.get_xticklabels()[i].set_color('red')
             ax.get_xticklabels()[i].set_fontweight('bold')
 
-    ax.legend(loc='upper left', frameon=True, fancybox=True, fontsize=9)
     ax.grid(axis='y', alpha=0.3, linestyle='--')
 
-    # Adjust layout
+    # Adjust layout with extra bottom margin for rotated labels
     plt.tight_layout()
 
     # Save
@@ -225,19 +230,37 @@ def plot_contamination_scatter(df, output_prefix):
     ax.axvline(x=phix_median, color='gray', linestyle='--', linewidth=1, alpha=0.5,
               label=f'Median PhiX ({phix_median:.2f}%)')
 
-    # Label outliers
-    for _, row in df_outliers.iterrows():
+    # Label outliers with smart positioning to avoid overlaps
+    # Sort outliers by total contamination (descending) for consistent positioning
+    df_outliers_sorted = df_outliers.sort_values('total_contamination_percent', ascending=False)
+
+    # Define offset positions to cycle through (prevents overlaps)
+    offset_positions = [
+        (15, 15),    # upper-right
+        (-15, 15),   # upper-left
+        (15, -15),   # lower-right
+        (-15, -15),  # lower-left
+        (25, 25),    # further upper-right
+        (-25, 25),   # further upper-left
+    ]
+
+    for i, (_, row) in enumerate(df_outliers_sorted.iterrows()):
         # Calculate fold-change vs median for annotation
         phix_fold = row['phix_percent'] / phix_median if phix_median > 0 else float('inf')
         vector_fold = row['vector_percent'] / vector_median if vector_median > 0 else float('inf')
         max_fold = max(phix_fold, vector_fold)
 
+        # Cycle through offset positions to avoid overlaps
+        offset = offset_positions[i % len(offset_positions)]
+        ha = 'left' if offset[0] > 0 else 'right'
+
         ax.annotate(f"{row['sample']}\n({max_fold:.1f}x)",
                    (row['phix_percent'], row['vector_percent']),
-                   xytext=(8, 8), textcoords='offset points',
+                   xytext=offset, textcoords='offset points',
                    fontsize=8, fontweight='bold', color='red',
                    bbox=dict(boxstyle='round,pad=0.3', facecolor='yellow', alpha=0.6, edgecolor='red'),
-                   arrowprops=dict(arrowstyle='->', color='red', lw=1))
+                   arrowprops=dict(arrowstyle='->', color='red', lw=1),
+                   ha=ha)
 
     # Formatting
     ax.set_xlabel('PhiX Contamination (%)', fontsize=12, fontweight='bold')
@@ -270,8 +293,10 @@ def plot_contamination_heatmap(df, output_prefix):
     col_order = df.sort_values('total_contamination_percent', ascending=False)['sample']
     heatmap_data = heatmap_data[col_order]
 
-    # Create figure
-    fig, ax = plt.subplots(figsize=(max(12, len(df) * 0.4), 5))
+    # Dynamic sizing based on sample count
+    n_samples = len(df)
+    fig_width = max(16, n_samples * 0.5)  # Increased from 0.4 to 0.5 per sample
+    fig, ax = plt.subplots(figsize=(fig_width, 5))
 
     # Create heatmap
     sns.heatmap(heatmap_data, annot=True, fmt='.2f', cmap='YlOrRd',
@@ -292,6 +317,11 @@ def plot_contamination_heatmap(df, output_prefix):
     ax.set_xlabel('Sample (sorted by total contamination)', fontsize=12, fontweight='bold')
     ax.set_ylabel('Contamination Type', fontsize=12, fontweight='bold')
     ax.set_yticklabels(['PhiX', 'Vector/Plasmid'], rotation=0, fontsize=11)
+
+    # Adjust x-axis label rotation and font size based on sample count
+    label_fontsize = 7 if n_samples > 40 else 8 if n_samples > 30 else 9
+    xticklabels = ax.get_xticklabels()
+    ax.set_xticklabels(xticklabels, rotation=90, fontsize=label_fontsize)
 
     # Color outlier sample names in red
     xticklabels = ax.get_xticklabels()
