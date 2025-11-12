@@ -364,12 +364,16 @@ rule viromeqc:
 
     Low enrichment score = VLP prep failure or excessive bacterial contamination
 
+    IMPORTANT: Runs on host_depleted reads (BEFORE rRNA removal) to get accurate
+    enrichment scores. Running after rRNA removal would artificially inflate the
+    enrichment score since rRNA has already been removed.
+
     Note: Runs bowtie2 and diamond alignments which require memory for large samples
           Allocated 16GB to handle samples up to ~95M reads
     """
     input:
-        r1 = f"{OUTDIR}/rrna_removed/{{sample}}_R1.fastq.gz",
-        r2 = f"{OUTDIR}/rrna_removed/{{sample}}_R2.fastq.gz"
+        r1 = f"{OUTDIR}/host_depleted/{{sample}}_R1.fastq.gz",
+        r2 = f"{OUTDIR}/host_depleted/{{sample}}_R2.fastq.gz"
     output:
         report = f"{OUTDIR}/viromeqc/{{sample}}_viromeqc.txt"
     log:

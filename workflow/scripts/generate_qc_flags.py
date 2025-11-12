@@ -78,13 +78,15 @@ def main():
         sample_reads = read_df[read_df['sample'] == sample]
 
         if len(sample_reads) > 0:
-            raw_count = sample_reads[sample_reads['step'] == 'raw']['reads'].values[0]
+            fastp_count = sample_reads[sample_reads['step'] == 'fastp']['reads'].values[0]
             host_depleted = sample_reads[sample_reads['step'] == 'host_depleted']['reads'].values[0]
             clean_count = sample_reads[sample_reads['step'] == 'clean']['reads'].values[0]
 
-            # Calculate % host removed
-            host_removed = raw_count - host_depleted
-            host_pct = (host_removed / raw_count) * 100 if raw_count > 0 else 0
+            # Calculate % host removed (using fastp count as denominator)
+            # fastp is the step immediately before host depletion, so this gives
+            # the true host contamination % without including QC filtering losses
+            host_removed = fastp_count - host_depleted
+            host_pct = (host_removed / fastp_count) * 100 if fastp_count > 0 else 0
 
             if host_pct <= max_host_pct:
                 flags['pass_host'] = 'PASS'
