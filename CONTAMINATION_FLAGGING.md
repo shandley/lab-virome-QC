@@ -201,14 +201,21 @@ bbduk.sh \
 - No `out=` parameter: Reads are not filtered
 - `stats=` file contains match counts
 
-### Database
+### Databases
 
-Vector/plasmid database location:
+**Both contamination databases are bundled with the pipeline** - no downloads needed!
+
+**PhiX reference:**
+```
+workflow/databases/phix174.fasta
+```
+- PhiX174 complete genome (5,386 bp)
+- Standard Illumina sequencing control
+
+**Vector/plasmid database:**
 ```
 workflow/databases/vector_contaminants.fa
 ```
-
-This should include common contaminants:
 - Cloning vectors (pUC, pBR322, etc.)
 - Plasmids (pET, pGEX, etc.)
 - Synthetic sequences

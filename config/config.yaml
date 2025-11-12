@@ -12,7 +12,8 @@ min_read_length: 100   # Minimum read length after trimming (higher for library 
 # Reference databases
 references:
   # PhiX174 reference genome (Illumina sequencing control)
-  phix: "resources/phix174.fasta"
+  # Provided in workflow/databases/ - no download needed
+  phix: "workflow/databases/phix174.fasta"
 
   # Host genome for depletion
   # Replace with your host organism (human, mouse, etc.)
