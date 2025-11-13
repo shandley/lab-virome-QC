@@ -438,6 +438,7 @@ rule count_reads:
     Count reads at each QC step for tracking
 
     Note: phix_removed step removed since we now flag instead of filter
+    Note: Can take several hours for large samples (50M+ reads)
     """
     input:
         raw_r1 = lambda wc: SAMPLES[wc.sample]["r1"],
@@ -447,6 +448,8 @@ rule count_reads:
         rrna_r1 = f"{OUTDIR}/rrna_removed/{{sample}}_R1.fastq.gz"
     output:
         temp(f"{OUTDIR}/reports/read_counts/{{sample}}.tsv")
+    resources:
+        time_min = 360
     conda:
         "envs/qc.yaml"
     shell:
