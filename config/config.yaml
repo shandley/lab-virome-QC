@@ -19,6 +19,11 @@ references:
   # Provided in workflow/databases/ - no download needed
   vector_contaminants: "workflow/databases/vector_contaminants.fa"
 
+  # Primer B sequences for library prep contamination removal
+  # Each sample should have only one primer B variant; multiple variants indicate cross-contamination
+  primer_b_forward: "workflow/databases/primerB.fa"
+  primer_b_rc: "workflow/databases/primerB_rc.fa"
+
   # Host genome for depletion
   # Replace with your host organism (human, mouse, etc.)
   host_genome: "resources/host_genome.fasta"
@@ -58,6 +63,38 @@ sample_auto_detection:
   #   - *.R1.fastq.gz / *.R2.fastq.gz (dot separator)
   r1_pattern: "*_R1.fastq.gz"
   r2_pattern: "*_R2.fastq.gz"
+
+# Primer B removal and cross-contamination detection
+primer_b:
+  # Enable/disable primer B removal step
+  enabled: true
+
+  # Optional: TSV file mapping samples to expected primer B IDs
+  # Format: sample_name\tprimer_b_id (e.g., "sample1\t3GB-12")
+  # If null, dominant primer B will be auto-detected for each sample
+  sample_assignments: null
+
+  # Cross-contamination threshold
+  # Samples with >5% unexpected primer B reads will be flagged
+  contamination_threshold: 0.05
+
+  # BBDuk parameters for forward primer B removal (left trim)
+  bbduk_forward:
+    ktrim: "l"           # Trim to the left
+    k: 16                # Kmer length (full primer B length)
+    mink: 9              # Minimum kmer length at read tips
+    rcomp: "f"           # Do not reverse complement
+    ordered: "t"         # Process in order
+    ow: "t"              # Overwrite existing files
+
+  # BBDuk parameters for reverse complement primer B removal (right trim)
+  bbduk_rc:
+    ktrim: "r"           # Trim to the right
+    k: 16                # Kmer length (full primer B length)
+    mink: 9              # Minimum kmer length at read tips
+    rcomp: "f"           # Do not reverse complement
+    ordered: "t"         # Process in order
+    ow: "t"              # Overwrite existing files
 
 # QC thresholds for flagging problematic samples
 qc_thresholds:

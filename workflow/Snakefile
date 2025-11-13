@@ -63,7 +63,10 @@ rule all:
         f"{OUTDIR}/reports/contamination_bars.png",
         f"{OUTDIR}/reports/contamination_boxes.png",
         f"{OUTDIR}/reports/contamination_scatter.png",
-        f"{OUTDIR}/reports/contamination_heatmap.png"
+        f"{OUTDIR}/reports/contamination_heatmap.png",
+        # Primer B cross-contamination analysis
+        f"{OUTDIR}/reports/primer_b_contamination_summary.tsv",
+        f"{OUTDIR}/reports/primer_b_heatmap.png"
 
 # ================================================================================
 # QC Rules
@@ -192,6 +195,105 @@ rule fastqc_trimmed:
         fastqc -t {threads} -o $(dirname {output.html_r1}) {input.r1} {input.r2} 2>&1 | tee {log}
         """
 
+rule remove_primer_b_forward:
+    """
+    Remove forward primer B sequences using left-side trimming
+
+    Step 1 of 2-step primer B removal process. Removes forward primer B sequences
+    that may contaminate the 5' end of reads. Each sample should have primarily one
+    primer B variant; presence of multiple variants indicates cross-contamination.
+
+    This step generates stats for downstream cross-contamination analysis.
+    """
+    input:
+        r1 = f"{OUTDIR}/fastp/{{sample}}_R1.fastq.gz",
+        r2 = f"{OUTDIR}/fastp/{{sample}}_R2.fastq.gz"
+    output:
+        r1 = temp(f"{OUTDIR}/primer_b/step1/{{sample}}_R1.fastq.gz"),
+        r2 = temp(f"{OUTDIR}/primer_b/step1/{{sample}}_R2.fastq.gz"),
+        stats = f"{OUTDIR}/primer_b/stats/step1/{{sample}}_pb_fwd_stats.txt"
+    log:
+        f"{OUTDIR}/logs/primer_b/{{sample}}_step1.log"
+    threads: 4
+    resources:
+        mem_mb = 8000
+    params:
+        ref = REFERENCES["primer_b_forward"],
+        ktrim = config["primer_b"]["bbduk_forward"]["ktrim"],
+        k = config["primer_b"]["bbduk_forward"]["k"],
+        mink = config["primer_b"]["bbduk_forward"]["mink"],
+        rcomp = config["primer_b"]["bbduk_forward"]["rcomp"],
+        ordered = config["primer_b"]["bbduk_forward"]["ordered"],
+        ow = config["primer_b"]["bbduk_forward"]["ow"]
+    conda:
+        "envs/bbtools.yaml"
+    shell:
+        """
+        bbduk.sh \
+            in1={input.r1} in2={input.r2} \
+            out1={output.r1} out2={output.r2} \
+            ref={params.ref} \
+            stats={output.stats} \
+            ktrim={params.ktrim} \
+            k={params.k} \
+            mink={params.mink} \
+            rcomp={params.rcomp} \
+            ordered={params.ordered} \
+            ow={params.ow} \
+            threads={threads} \
+            -Xmx{resources.mem_mb}m \
+            2>&1 | tee {log}
+        """
+
+rule remove_primer_b_rc:
+    """
+    Remove reverse complement primer B sequences using right-side trimming
+
+    Step 2 of 2-step primer B removal process. Removes reverse complement primer B
+    sequences that may contaminate the 3' end of reads after step 1.
+
+    This step generates stats for downstream cross-contamination analysis.
+    """
+    input:
+        r1 = f"{OUTDIR}/primer_b/step1/{{sample}}_R1.fastq.gz",
+        r2 = f"{OUTDIR}/primer_b/step1/{{sample}}_R2.fastq.gz"
+    output:
+        r1 = temp(f"{OUTDIR}/primer_b/step2/{{sample}}_R1.fastq.gz"),
+        r2 = temp(f"{OUTDIR}/primer_b/step2/{{sample}}_R2.fastq.gz"),
+        stats = f"{OUTDIR}/primer_b/stats/step2/{{sample}}_pb_rc_stats.txt"
+    log:
+        f"{OUTDIR}/logs/primer_b/{{sample}}_step2.log"
+    threads: 4
+    resources:
+        mem_mb = 8000
+    params:
+        ref = REFERENCES["primer_b_rc"],
+        ktrim = config["primer_b"]["bbduk_rc"]["ktrim"],
+        k = config["primer_b"]["bbduk_rc"]["k"],
+        mink = config["primer_b"]["bbduk_rc"]["mink"],
+        rcomp = config["primer_b"]["bbduk_rc"]["rcomp"],
+        ordered = config["primer_b"]["bbduk_rc"]["ordered"],
+        ow = config["primer_b"]["bbduk_rc"]["ow"]
+    conda:
+        "envs/bbtools.yaml"
+    shell:
+        """
+        bbduk.sh \
+            in1={input.r1} in2={input.r2} \
+            out1={output.r1} out2={output.r2} \
+            ref={params.ref} \
+            stats={output.stats} \
+            ktrim={params.ktrim} \
+            k={params.k} \
+            mink={params.mink} \
+            rcomp={params.rcomp} \
+            ordered={params.ordered} \
+            ow={params.ow} \
+            threads={threads} \
+            -Xmx{resources.mem_mb}m \
+            2>&1 | tee {log}
+        """
+
 rule flag_phix:
     """
     Flag PhiX174 contamination without removing reads
@@ -201,10 +303,12 @@ rule flag_phix:
     to identify samples with abnormal PhiX levels (which may indicate sequencing issues).
 
     Uses BBDuk in detection-only mode to quantify PhiX contamination.
+
+    Note: Runs on primer B-removed reads to avoid false positives from primer sequences.
     """
     input:
-        r1 = f"{OUTDIR}/fastp/{{sample}}_R1.fastq.gz",
-        r2 = f"{OUTDIR}/fastp/{{sample}}_R2.fastq.gz"
+        r1 = f"{OUTDIR}/primer_b/step2/{{sample}}_R1.fastq.gz",
+        r2 = f"{OUTDIR}/primer_b/step2/{{sample}}_R2.fastq.gz"
     output:
         stats = f"{OUTDIR}/contamination_flagging/phix/{{sample}}_phix_stats.txt"
     log:
@@ -238,10 +342,12 @@ rule flag_univec:
     indicate laboratory contamination. Generates QC metrics to identify outlier samples.
 
     Uses comprehensive UniVec-derived database including common lab vectors.
+
+    Note: Runs on primer B-removed reads to avoid false positives from primer sequences.
     """
     input:
-        r1 = f"{OUTDIR}/fastp/{{sample}}_R1.fastq.gz",
-        r2 = f"{OUTDIR}/fastp/{{sample}}_R2.fastq.gz"
+        r1 = f"{OUTDIR}/primer_b/step2/{{sample}}_R1.fastq.gz",
+        r2 = f"{OUTDIR}/primer_b/step2/{{sample}}_R2.fastq.gz"
     output:
         stats = f"{OUTDIR}/contamination_flagging/univec/{{sample}}_univec_stats.txt"
     log:
@@ -275,13 +381,13 @@ rule host_depletion:
     1. Remove host sequences from analysis
     2. QC metric for VLP enrichment success
 
-    Note: Now operates directly on fastp output (PhiX/vector flagging doesn't filter reads)
+    Note: Operates on primer B-removed reads (PhiX/vector flagging doesn't filter reads)
     Note: Minimap2 loads host genome index (~12GB for human) plus read processing
           Allocated 24GB to handle large samples
     """
     input:
-        r1 = f"{OUTDIR}/fastp/{{sample}}_R1.fastq.gz",
-        r2 = f"{OUTDIR}/fastp/{{sample}}_R2.fastq.gz",
+        r1 = f"{OUTDIR}/primer_b/step2/{{sample}}_R1.fastq.gz",
+        r2 = f"{OUTDIR}/primer_b/step2/{{sample}}_R2.fastq.gz",
         host_ref = REFERENCES["host_genome"],
         # Ensure contamination flagging happens first (for workflow ordering)
         phix_stats = f"{OUTDIR}/contamination_flagging/phix/{{sample}}_phix_stats.txt",
@@ -439,13 +545,15 @@ rule count_reads:
     """
     Count reads at each QC step for tracking
 
-    Note: phix_removed step removed since we now flag instead of filter
+    Tracks reads through the full pipeline including primer B removal
     Note: Can take several hours for large samples (50M+ reads)
     """
     input:
         raw_r1 = lambda wc: SAMPLES[wc.sample]["r1"],
         clumpify_r1 = f"{OUTDIR}/clumpify/{{sample}}_R1.fastq.gz",
         fastp_r1 = f"{OUTDIR}/fastp/{{sample}}_R1.fastq.gz",
+        pb_step1_r1 = f"{OUTDIR}/primer_b/step1/{{sample}}_R1.fastq.gz",
+        pb_step2_r1 = f"{OUTDIR}/primer_b/step2/{{sample}}_R1.fastq.gz",
         host_r1 = f"{OUTDIR}/host_depleted/{{sample}}_R1.fastq.gz",
         rrna_r1 = f"{OUTDIR}/rrna_removed/{{sample}}_R1.fastq.gz"
     output:
@@ -460,6 +568,8 @@ rule count_reads:
         echo -e "{wildcards.sample}\traw\t$(zcat {input.raw_r1} | wc -l | awk '{{print $1/4}}')" >> {output}
         echo -e "{wildcards.sample}\tclumpify\t$(zcat {input.clumpify_r1} | wc -l | awk '{{print $1/4}}')" >> {output}
         echo -e "{wildcards.sample}\tfastp\t$(zcat {input.fastp_r1} | wc -l | awk '{{print $1/4}}')" >> {output}
+        echo -e "{wildcards.sample}\tprimer_b_fwd\t$(zcat {input.pb_step1_r1} | wc -l | awk '{{print $1/4}}')" >> {output}
+        echo -e "{wildcards.sample}\tprimer_b_rc\t$(zcat {input.pb_step2_r1} | wc -l | awk '{{print $1/4}}')" >> {output}
         echo -e "{wildcards.sample}\thost_depleted\t$(zcat {input.host_r1} | wc -l | awk '{{print $1/4}}')" >> {output}
         echo -e "{wildcards.sample}\tclean\t$(zcat {input.rrna_r1} | wc -l | awk '{{print $1/4}}')" >> {output}
         """
@@ -519,6 +629,49 @@ rule plot_contamination:
         "envs/qc.yaml"
     script:
         "scripts/plot_contamination.py"
+
+rule analyze_primer_b_contamination:
+    """
+    Analyze primer B cross-contamination across all samples
+
+    Parses BBDuk stats from primer B removal steps to detect cross-contamination.
+    Each sample should have primarily one primer B variant; multiple variants
+    indicate cross-contamination during library prep or sequencing.
+
+    Outputs:
+    - Summary table with dominant primer B and contamination metrics
+    - Distribution data for heatmap visualization
+    """
+    input:
+        step1 = expand(f"{OUTDIR}/primer_b/stats/step1/{{sample}}_pb_fwd_stats.txt", sample=SAMPLES),
+        step2 = expand(f"{OUTDIR}/primer_b/stats/step2/{{sample}}_pb_rc_stats.txt", sample=SAMPLES)
+    output:
+        summary = f"{OUTDIR}/reports/primer_b_contamination_summary.tsv",
+        distribution = f"{OUTDIR}/reports/primer_b_distribution.tsv"
+    params:
+        sample_assignments = config["primer_b"].get("sample_assignments", None),
+        contamination_threshold = config["primer_b"]["contamination_threshold"]
+    conda:
+        "envs/qc.yaml"
+    script:
+        "scripts/analyze_primer_b_contamination.py"
+
+rule plot_primer_b_heatmap:
+    """
+    Generate primer B cross-contamination heatmap
+
+    Creates a heatmap showing primer B variant distribution across samples.
+    Helps identify cross-contamination patterns and verify sample identity.
+    """
+    input:
+        distribution = f"{OUTDIR}/reports/primer_b_distribution.tsv",
+        summary = f"{OUTDIR}/reports/primer_b_contamination_summary.tsv"
+    output:
+        heatmap = f"{OUTDIR}/reports/primer_b_heatmap.png"
+    conda:
+        "envs/qc.yaml"
+    script:
+        "scripts/plot_primer_b_heatmap.py"
 
 rule qc_flags:
     """
