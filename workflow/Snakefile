@@ -364,19 +364,25 @@ rule viromeqc:
 
     Low enrichment score = VLP prep failure or excessive bacterial contamination
 
+    IMPORTANT: Runs on host_depleted reads (BEFORE rRNA removal) to get accurate
+    enrichment scores. Running after rRNA removal would artificially inflate the
+    enrichment score since rRNA has already been removed.
+
     Note: Runs bowtie2 and diamond alignments which require memory for large samples
           Allocated 16GB to handle samples up to ~95M reads
+          Can take several hours for large samples (>10M reads)
     """
     input:
-        r1 = f"{OUTDIR}/rrna_removed/{{sample}}_R1.fastq.gz",
-        r2 = f"{OUTDIR}/rrna_removed/{{sample}}_R2.fastq.gz"
+        r1 = f"{OUTDIR}/host_depleted/{{sample}}_R1.fastq.gz",
+        r2 = f"{OUTDIR}/host_depleted/{{sample}}_R2.fastq.gz"
     output:
         report = f"{OUTDIR}/viromeqc/{{sample}}_viromeqc.txt"
     log:
         f"{OUTDIR}/logs/viromeqc/{{sample}}.log"
     threads: 4
     resources:
-        mem_mb = 16000
+        mem_mb = 16000,
+        time_min = 360
     conda:
         "envs/viromeqc.yaml"
     shell:
@@ -434,6 +440,7 @@ rule count_reads:
     Count reads at each QC step for tracking
 
     Note: phix_removed step removed since we now flag instead of filter
+    Note: Can take several hours for large samples (50M+ reads)
     """
     input:
         raw_r1 = lambda wc: SAMPLES[wc.sample]["r1"],
@@ -443,6 +450,8 @@ rule count_reads:
         rrna_r1 = f"{OUTDIR}/rrna_removed/{{sample}}_R1.fastq.gz"
     output:
         temp(f"{OUTDIR}/reports/read_counts/{{sample}}.tsv")
+    resources:
+        time_min = 360
     conda:
         "envs/qc.yaml"
     shell:
