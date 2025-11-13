@@ -9,6 +9,17 @@ output_dir: "results"
 quality_threshold: 20  # Phred quality score (Q20 = 99% accuracy)
 min_read_length: 100   # Minimum read length after trimming (higher for library prep artifacts)
 
+# Deduplication settings
+deduplication:
+  pcr:
+    # Enable PCR duplicate removal for Round A/B virome data (40 cycles PCR)
+    # Round A/B data typically has 80-90%+ PCR duplicates
+    # Disable for non-PCR-amplified data or low-cycle PCR (<30 cycles)
+    enabled: false  # Set to true for Round A/B virome data
+
+    # Note: Optical duplicates are ALWAYS removed (clumpify step)
+    # This setting only controls PCR duplicate removal (dedupe.sh)
+
 # Reference databases
 references:
   # PhiX174 reference genome (Illumina sequencing control)
