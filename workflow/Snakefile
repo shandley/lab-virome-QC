@@ -370,6 +370,7 @@ rule viromeqc:
 
     Note: Runs bowtie2 and diamond alignments which require memory for large samples
           Allocated 16GB to handle samples up to ~95M reads
+          Can take several hours for large samples (>10M reads)
     """
     input:
         r1 = f"{OUTDIR}/host_depleted/{{sample}}_R1.fastq.gz",
@@ -381,6 +382,7 @@ rule viromeqc:
     threads: 4
     resources:
         mem_mb = 16000
+        time_min = 360
     conda:
         "envs/viromeqc.yaml"
     shell:
