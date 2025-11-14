@@ -30,6 +30,11 @@ references:
   # Provided in workflow/databases/ - no download needed
   vector_contaminants: "workflow/databases/vector_contaminants.fa"
 
+  # Primer B sequences for library prep contamination removal
+  # Each sample should have only one primer B variant; multiple variants indicate cross-contamination
+  primer_b_forward: "workflow/databases/primerB.fa"
+  primer_b_rc: "workflow/databases/primerB_rc.fa"
+
   # Host genome for depletion
   # Replace with your host organism (human, mouse, etc.)
   host_genome: "resources/host_genome.fasta"
@@ -69,6 +74,16 @@ sample_auto_detection:
   #   - *.R1.fastq.gz / *.R2.fastq.gz (dot separator)
   r1_pattern: "*_R1.fastq.gz"
   r2_pattern: "*_R2.fastq.gz"
+
+# Primer B removal and cross-contamination detection
+primer_b:
+  enabled: true                     # Enable/disable primer B removal
+  sample_assignments: null          # Optional TSV file: sample_name\tprimer_b_id (null = auto-detect)
+  contamination_threshold: 0.05     # Flag samples with >5% unexpected primer B reads
+
+  # Advanced: BBDuk trimming parameters (most users won't need to change these)
+  bbduk_forward: {ktrim: "l", k: 16, mink: 9, rcomp: "f", ordered: "t", ow: "t"}
+  bbduk_rc: {ktrim: "r", k: 16, mink: 9, rcomp: "f", ordered: "t", ow: "t"}
 
 # QC thresholds for flagging problematic samples
 qc_thresholds:
