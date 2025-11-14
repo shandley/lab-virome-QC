@@ -488,7 +488,7 @@ rule viromeqc:
     threads: 4
     resources:
         mem_mb = 16000,
-        time_min = 360
+        time_min = 720
     conda:
         "envs/viromeqc.yaml"
     shell:
