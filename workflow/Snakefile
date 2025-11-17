@@ -463,9 +463,9 @@ rule remove_pcr_duplicates:
     """
     Remove PCR duplicates using clumpify.sh from BBTools
 
-    For Round A/B virome data with 40 cycles of PCR, this step removes massive
-    PCR duplication (typically 80-90%+ of reads), getting closer to "unique
-    molecules present" rather than "PCR-amplified copies."
+    For Round A/B virome data with 40 cycles of PCR, this step removes
+    PCR duplicates, getting closer to "unique molecules present" rather
+    than "PCR-amplified copies."
 
     Placement rationale:
     - Last QC step (after all quality filtering and rRNA removal)
@@ -641,6 +641,7 @@ rule count_reads:
 
         # Conditionally add PCR dedup stats
         if [ "{params.pcr_dedup_enabled}" = "True" ]; then
+            echo -e "{wildcards.sample}\tpcr_deduplicated\t$(zcat {input.pcr_dedup_r1} | wc -l | awk '{{print $1/4}}')" >> {output}
             echo -e "{wildcards.sample}\tclean\t$(zcat {input.pcr_dedup_r1} | wc -l | awk '{{print $1/4}}')" >> {output}
         else
             echo -e "{wildcards.sample}\tclean\t$(zcat {input.rrna_r1} | wc -l | awk '{{print $1/4}}')" >> {output}
