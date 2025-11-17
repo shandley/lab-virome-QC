@@ -17,8 +17,7 @@ This Snakemake pipeline provides robust QC specifically designed for:
 
 ✅ **NovaSeq-specific QC** - PolyG tail removal (critical for 2-channel chemistry)
 ✅ **VLP enrichment assessment** - ViromeQC enrichment scoring
-✅ **Contamination flagging & removal** - PhiX/vector flagging (non-destructive), host & rRNA removal
-✅ **Statistical outlier detection** - IQR-based contamination QC with publication-quality visualizations
+✅ **Comprehensive contamination removal** - PhiX, host, rRNA
 ✅ **Optical duplicate removal** - Illumina patterned flow cell artifacts
 ✅ **Automated QC flagging** - Pass/fail criteria for each sample
 ✅ **Rich reporting** - MultiQC dashboard with all metrics
@@ -38,7 +37,7 @@ Raw Reads (NovaSeq FASTQ)
     ↓
 [4] FastQC (trimmed reads)
     ↓
-[5] BBDuk (PhiX/vector contamination flagging) ← NEW: Non-destructive detection
+[5] BBDuk (PhiX removal)
     ↓
 [6] minimap2 (host depletion) ← QC metric for VLP success
     ↓
@@ -50,9 +49,7 @@ Raw Reads (NovaSeq FASTQ)
     ↓
 [10] MultiQC (aggregate all reports)
     ↓
-[11] Contamination analysis (statistical outlier detection + plots)
-    ↓
-Clean reads + QC reports + Sample flags + Contamination plots
+Clean reads + QC reports + Sample flags
 ```
 
 ---
@@ -188,17 +185,15 @@ sample2	data/raw/sample2_R1.fastq.gz	data/raw/sample2_R2.fastq.gz
 
 ### 3. Adjust QC Thresholds (Optional)
 
-Edit `config/config.yaml` to set custom QC thresholds based on your lab's historical data:
+Edit `config/config.yaml` to set custom QC thresholds:
 
 ```yaml
 qc_thresholds:
-  min_enrichment_score: 10      # ViromeQC enrichment score (adjust for your preps)
-  max_host_percent: 10          # Maximum % host reads (adjust for your preps)
+  min_enrichment_score: 10      # ViromeQC enrichment score
+  max_host_percent: 10          # Maximum % host reads
   max_rrna_percent: 20          # Maximum % rRNA after removal
-  min_final_reads: 100000       # Minimum reads after QC (adjust for sequencing depth)
+  min_final_reads: 100000       # Minimum reads after QC
 ```
-
-**Note:** These are example starting points. Adjust based on your lab's VLP preparation performance and sequencing platform.
 
 ### 4. Resource Requirements
 
@@ -277,21 +272,14 @@ results/
 ├── fastqc/                    # FastQC reports (raw, trimmed, final)
 ├── clumpify/                  # Optical duplicate removal
 ├── fastp/                     # Adapter trimming + QC
-├── contamination_flagging/    # PhiX and vector contamination detection stats
-│   ├── phix/                  # Per-sample PhiX contamination stats
-│   └── univec/                # Per-sample vector/plasmid contamination stats
+├── phix_removed/              # PhiX-depleted reads
 ├── host_depleted/             # Host-depleted reads
 ├── rrna_removed/              # rRNA-depleted reads (clean)
 ├── viromeqc/                  # ViromeQC enrichment scores
 ├── clean_reads/               # Symlinks to final clean reads
 ├── reports/
 │   ├── read_counts.tsv        # Read counts at each step
-│   ├── sample_qc_flags.tsv    # Pass/fail flags per sample
-│   ├── contamination_summary.tsv        # Contamination levels per sample
-│   ├── contamination_bars.png           # Bar plot with outliers highlighted
-│   ├── contamination_boxes.png          # Distribution box plots
-│   ├── contamination_scatter.png        # PhiX vs vector correlation
-│   └── contamination_heatmap.png        # Heatmap overview
+│   └── sample_qc_flags.tsv    # Pass/fail flags per sample
 ├── multiqc/
 │   └── multiqc_report.html    # Comprehensive QC dashboard
 └── logs/                      # All log files
@@ -329,58 +317,35 @@ sample2   3.2               FAIL             FAIL       PASS       FAIL         
 
 **Most important QC metric for VLP samples!**
 
-- **Score >>1**: Good VLP enrichment (viral reads enriched vs bacterial)
+- **Score >>1 (e.g., >10)**: Good VLP enrichment
 - **Score ~1**: Poor enrichment (essentially a metagenome)
-- **Score <1**: VLP prep failed (less viral content than typical metagenome)
+- **Score <1**: VLP prep failed
 
 Low scores indicate:
 - Failed VLP preparation
 - Excessive bacterial contamination
 - Sample may need to be excluded or re-processed
 
-Compare your samples to lab standards and previous successful runs to determine acceptable thresholds.
-
-### 4. Contamination Flagging (PhiX & Vector)
-
-**NEW in this version!** See detailed guide: [CONTAMINATION_FLAGGING.md](CONTAMINATION_FLAGGING.md)
-
-Check contamination plots in `results/reports/`:
-- **contamination_bars.png** - Sample-by-sample contamination levels (outliers in red)
-- **contamination_boxes.png** - Distribution across your batch
-- **contamination_scatter.png** - PhiX vs vector correlation
-- **contamination_heatmap.png** - Overview with outliers boxed
-
-**Key Points:**
-- Uses **IQR-based outlier detection** (not fixed thresholds)
-- Identifies samples that deviate from your batch median
-- **Non-destructive**: Flags contamination but doesn't remove reads
-- VLP samples typically have very low contamination (<0.01%)
-- Outliers may indicate library prep issues (not VLP failure)
-
-Check `results/reports/contamination_summary.tsv` for exact percentages.
-
-### 5. Host Contamination
+### 4. Host Contamination
 
 Check `results/host_depleted/*_host_stats.txt`
 
-**Key concept:** High host reads indicate VLP prep failure (unlike metagenomes where host removal is routine cleanup).
+- **<5% host reads**: Excellent VLP prep
+- **5-10% host**: Acceptable
+- **>10% host**: VLP prep likely failed
 
-Compare your samples to:
-- Lab historical data for typical VLP prep performance
-- Within-run median to identify outliers
-- Manufacturer specifications if using commercial VLP enrichment kits
-
-### 6. Read Retention
+### 5. Read Retention
 
 Check `results/reports/read_counts.tsv`
 
-**Read retention varies widely** depending on:
-- Library quality (adapter content, quality scores)
-- NovaSeq polyG artifact prevalence (2-channel chemistry)
-- rRNA contamination levels (especially for RT-based protocols)
-- Sample type and VLP enrichment efficiency
+Typical read retention through QC pipeline:
+```
+Raw → Clean: 20-50% retention is normal for VLP samples
+```
 
-Compare within-run samples to identify outliers with unusually high losses.
+Major losses expected at:
+- fastp (adapter trimming, polyG, quality)
+- rRNA removal (if RT-based protocol)
 
 ---
 
@@ -396,7 +361,7 @@ Compare within-run samples to identify outliers with unusually high losses.
 
 **Problem:** VLP prep can fail, resulting in metagenome-like contamination
 **Solution:** ViromeQC quantifies enrichment score
-**Action:** Compare scores across your batch to identify failed preps (significantly lower than batch median)
+**Action:** Flag samples with enrichment score <10 for review/exclusion
 
 ### Host Contamination as QC Metric
 
