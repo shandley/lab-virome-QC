@@ -461,7 +461,7 @@ rule remove_rrna:
 
 rule remove_pcr_duplicates:
     """
-    Remove PCR duplicates using dedupe.sh from BBTools
+    Remove PCR duplicates using clumpify.sh from BBTools
 
     For Round A/B virome data with 40 cycles of PCR, this step removes massive
     PCR duplication (typically 80-90%+ of reads), getting closer to "unique
@@ -477,11 +477,11 @@ rule remove_pcr_duplicates:
     - Enable for high-cycle PCR data (Round A/B with 40 cycles)
     - Disable for non-PCR or low-cycle data
 
-    Note: ac=f uses sequence similarity for duplicate detection
-          (appropriate for error-containing reads from high-cycle PCR)
-
-    Note: dedupe.sh outputs interleaved paired-end reads, so we use
-          reformat.sh to deinterleave back to separate R1/R2 files
+    Note: Uses exact matching for duplicate detection (dedupe optical=f).
+          This is appropriate here because quality filtering has already
+          removed error-containing reads, so remaining sequence variation
+          likely represents real biological diversity (viral quasispecies)
+          rather than PCR/sequencing errors.
     """
     input:
         r1 = f"{OUTDIR}/rrna_removed/{{sample}}_R1.fastq.gz",
@@ -499,23 +499,16 @@ rule remove_pcr_duplicates:
         "envs/bbtools.yaml"
     shell:
         """
-        # dedupe.sh outputs interleaved paired-end reads
-        dedupe.sh \
-            in={input.r1} in2={input.r2} \
-            out=stdout.fq \
-            ac=f \
+        clumpify.sh \
+            in1={input.r1} in2={input.r2} \
+            out1={output.r1} out2={output.r2} \
+            dedupe optical=f \
             threads={threads} \
             -Xmx{resources.mem_mb}m \
             2>&1 | tee {log}
 
-        # Deinterleave back to separate R1/R2 files
-        reformat.sh \
-            in=stdout.fq \
-            out1={output.r1} out2={output.r2} \
-            -Xmx{resources.mem_mb}m
-
         # Extract stats for reporting
-        # dedupe.sh outputs stats to stderr/stdout, captured in log
+        # clumpify.sh outputs stats to stderr/stdout, captured in log
         grep -E "^(Input|Duplicates|Result)" {log} > {output.stats} || true
         """
 
