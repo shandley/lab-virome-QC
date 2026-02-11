@@ -2,7 +2,11 @@
 """
 Calculate assembly statistics from FASTA contigs
 
-Computes metrics including:
+Two-Stage Assembly Workflow Statistics:
+Computes metrics for both the final Flye meta-assembly and the intermediate
+MEGAHIT assemblies (per-sample or per-group).
+
+Metrics include:
 - Number of contigs
 - Total assembly size (bp)
 - N50, L50 (standard assembly quality metrics)
@@ -15,6 +19,7 @@ import pandas as pd
 from pathlib import Path
 from Bio import SeqIO
 import numpy as np
+import sys
 
 
 def parse_fasta(fasta_file):
@@ -44,6 +49,9 @@ def calculate_n50_l50(lengths):
     Returns:
         tuple: (N50, L50)
     """
+    if not lengths:
+        return 0, 0
+
     # Sort lengths in descending order
     sorted_lengths = sorted(lengths, reverse=True)
     total_length = sum(sorted_lengths)
@@ -88,19 +96,24 @@ def calculate_gc_content(sequences):
     return (total_gc / total_bases) * 100
 
 
-def calculate_assembly_stats(fasta_file, sample_name=None):
+def calculate_assembly_stats(fasta_file, assembly_name=None, assembly_type="megahit"):
     """
     Calculate comprehensive assembly statistics for a single assembly
 
     Args:
         fasta_file: Path to FASTA file
-        sample_name: Optional sample name (for individual assemblies)
+        assembly_name: Name for this assembly (sample, group, or 'flye_final')
+        assembly_type: Type of assembly ('megahit' or 'flye')
 
     Returns:
         dict: Assembly statistics
     """
     # Parse sequences
-    sequences = parse_fasta(fasta_file)
+    try:
+        sequences = parse_fasta(fasta_file)
+    except Exception as e:
+        print(f"Warning: Could not parse {fasta_file}: {e}", file=sys.stderr)
+        sequences = []
 
     # Basic counts
     num_contigs = len(sequences)
@@ -108,7 +121,8 @@ def calculate_assembly_stats(fasta_file, sample_name=None):
     # Handle empty assemblies
     if num_contigs == 0:
         return {
-            'sample': sample_name or 'coassembly',
+            'assembly_name': assembly_name or 'unknown',
+            'assembly_type': assembly_type,
             'num_contigs': 0,
             'total_size_bp': 0,
             'mean_length_bp': 0,
@@ -129,7 +143,8 @@ def calculate_assembly_stats(fasta_file, sample_name=None):
     gc_content = calculate_gc_content(sequences)
 
     return {
-        'sample': sample_name or 'coassembly',
+        'assembly_name': assembly_name or 'unknown',
+        'assembly_type': assembly_type,
         'num_contigs': num_contigs,
         'total_size_bp': total_size,
         'mean_length_bp': int(mean_length),
@@ -140,51 +155,130 @@ def calculate_assembly_stats(fasta_file, sample_name=None):
     }
 
 
+def parse_flye_info(info_file):
+    """
+    Parse Flye assembly_info.txt for additional metrics
+
+    Args:
+        info_file: Path to Flye assembly_info.txt
+
+    Returns:
+        dict: Additional Flye-specific metrics
+    """
+    metrics = {
+        'circular_contigs': 0,
+        'repeat_contigs': 0
+    }
+
+    try:
+        with open(info_file, 'r') as f:
+            # Skip header
+            next(f)
+            for line in f:
+                parts = line.strip().split('\t')
+                if len(parts) >= 4:
+                    # Check circular status (column 4)
+                    if parts[3] == 'Y':
+                        metrics['circular_contigs'] += 1
+                    # Check repeat status (column 5, if exists)
+                    if len(parts) >= 5 and parts[4] == 'Y':
+                        metrics['repeat_contigs'] += 1
+    except Exception as e:
+        print(f"Warning: Could not parse Flye info file: {e}", file=sys.stderr)
+
+    return metrics
+
+
 def main():
     """Main function called by Snakemake"""
     # Get inputs from snakemake
-    contigs_input = snakemake.input.contigs
+    flye_assembly = snakemake.input.flye_assembly
+    flye_info = snakemake.input.flye_info
+    megahit_contigs = snakemake.input.megahit_contigs
     output_file = snakemake.output.stats
+    log_file = snakemake.log[0] if snakemake.log else None
 
-    # Determine if coassembly or individual
-    assembly_strategy = snakemake.config.get("pipeline", {}).get("assembly_strategy", "coassembly")
+    # Get assembly strategy
+    assembly_strategy = snakemake.params.get("strategy", "by_sample")
 
     results = []
 
-    if assembly_strategy == "coassembly":
-        # Single input file - coassembly
-        if isinstance(contigs_input, str):
-            stats = calculate_assembly_stats(contigs_input, sample_name="coassembly")
-            results.append(stats)
-        else:
-            # Shouldn't happen, but handle just in case
-            stats = calculate_assembly_stats(contigs_input[0], sample_name="coassembly")
-            results.append(stats)
+    # Log start
+    if log_file:
+        with open(log_file, 'w') as log:
+            log.write(f"Calculating assembly statistics\n")
+            log.write(f"Assembly strategy: {assembly_strategy}\n")
+            log.write(f"Flye assembly: {flye_assembly}\n")
+            log.write(f"MEGAHIT contigs: {megahit_contigs}\n\n")
 
-    else:
-        # Multiple input files - individual assemblies
-        if isinstance(contigs_input, str):
-            # Single file - shouldn't happen for individual strategy
-            contigs_input = [contigs_input]
+    # 1. Calculate stats for final Flye assembly
+    flye_stats = calculate_assembly_stats(
+        flye_assembly,
+        assembly_name="FINAL_FLYE",
+        assembly_type="flye"
+    )
 
-        for contig_file in contigs_input:
-            # Extract sample name from path
-            # Expected format: .../assembly/per_sample/{sample}/final.contigs.fa
-            sample_name = Path(contig_file).parent.name
-            stats = calculate_assembly_stats(contig_file, sample_name=sample_name)
-            results.append(stats)
+    # Add Flye-specific metrics
+    flye_metrics = parse_flye_info(flye_info)
+    flye_stats.update(flye_metrics)
 
-    # Create DataFrame and write to TSV
+    results.append(flye_stats)
+
+    # 2. Calculate stats for each MEGAHIT assembly (per-sample or per-group)
+    if isinstance(megahit_contigs, str):
+        megahit_contigs = [megahit_contigs]
+
+    for contig_file in megahit_contigs:
+        # Extract name from path
+        # For individual: .../assembly/per_sample/{sample}/final.contigs.fa
+        # For groups: .../assembly/per_group/{group}/final.contigs.fa
+        contig_path = Path(contig_file)
+        assembly_name = contig_path.parent.name
+
+        stats = calculate_assembly_stats(
+            contig_file,
+            assembly_name=assembly_name,
+            assembly_type="megahit"
+        )
+        results.append(stats)
+
+    # Create DataFrame
     df = pd.DataFrame(results)
 
-    # Sort by sample name
-    df = df.sort_values('sample')
+    # Reorder columns for better readability
+    column_order = [
+        'assembly_name', 'assembly_type', 'num_contigs', 'total_size_bp',
+        'mean_length_bp', 'longest_contig_bp', 'n50', 'l50', 'gc_percent'
+    ]
+
+    # Add Flye-specific columns if present
+    if 'circular_contigs' in df.columns:
+        column_order.extend(['circular_contigs', 'repeat_contigs'])
+
+    # Ensure all columns exist
+    for col in column_order:
+        if col not in df.columns:
+            df[col] = 0
+
+    df = df[column_order]
+
+    # Sort: FINAL_FLYE first, then alphabetically
+    df['sort_key'] = df['assembly_name'].apply(lambda x: '0' if x == 'FINAL_FLYE' else x)
+    df = df.sort_values('sort_key').drop('sort_key', axis=1)
 
     # Write output
     df.to_csv(output_file, sep='\t', index=False)
 
+    # Log completion
+    if log_file:
+        with open(log_file, 'a') as log:
+            log.write(f"\nAssembly statistics written to {output_file}\n")
+            log.write(f"Processed {len(results)} assemblies:\n")
+            log.write(f"  - 1 final Flye meta-assembly\n")
+            log.write(f"  - {len(results) - 1} MEGAHIT assemblies\n")
+
     print(f"Assembly statistics written to {output_file}")
-    print(f"Processed {len(results)} assembly/assemblies")
+    print(f"Processed {len(results)} assemblies (1 Flye + {len(results) - 1} MEGAHIT)")
 
 
 if __name__ == '__main__':

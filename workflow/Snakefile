@@ -44,7 +44,126 @@ REFERENCES = config["references"]
 PIPELINE_CONFIG = config.get("pipeline", {})
 START_FROM = PIPELINE_CONFIG.get("start_from", "raw_reads")
 RUN_ASSEMBLY = PIPELINE_CONFIG.get("run_assembly", False)
-ASSEMBLY_STRATEGY = PIPELINE_CONFIG.get("assembly_strategy", "coassembly")
+ASSEMBLY_STRATEGY = PIPELINE_CONFIG.get("assembly_strategy", "by_sample")
+GROUPS_FILE = PIPELINE_CONFIG.get("groups_file", None)
+
+# ================================================================================
+# Groups File Parser for Custom Groups Assembly
+# ================================================================================
+
+def parse_groups_file(groups_file_path, pipeline_samples):
+    """
+    Parse a sample groups TSV file and validate its contents.
+
+    Args:
+        groups_file_path: Path to the TSV file with sample_id and group_id columns
+        pipeline_samples: List of sample IDs from the pipeline
+
+    Returns:
+        dict: Mapping of sample_id -> group_id
+
+    Raises:
+        ValueError: If file format is invalid or samples are missing
+    """
+    import csv
+
+    if not os.path.exists(groups_file_path):
+        raise FileNotFoundError(
+            f"Groups file not found: {groups_file_path}\n"
+            "Please provide a valid TSV file with sample_id and group_id columns."
+        )
+
+    sample_to_group = {}
+    groups_to_samples = {}
+
+    with open(groups_file_path, 'r') as f:
+        reader = csv.reader(f, delimiter='\t')
+
+        for line_num, row in enumerate(reader, 1):
+            # Skip empty lines and comments
+            if not row or row[0].startswith('#'):
+                continue
+
+            # Skip header row if present
+            if line_num == 1 and row[0].lower() in ['sample_id', 'sample', 'sampleid']:
+                continue
+
+            # Validate exactly 2 columns
+            if len(row) != 2:
+                raise ValueError(
+                    f"Groups file format error at line {line_num}: Expected 2 columns (sample_id, group_id), "
+                    f"found {len(row)} columns.\n"
+                    f"Line content: {row}"
+                )
+
+            sample_id, group_id = row[0].strip(), row[1].strip()
+
+            if not sample_id or not group_id:
+                raise ValueError(
+                    f"Groups file format error at line {line_num}: Empty sample_id or group_id.\n"
+                    f"Line content: {row}"
+                )
+
+            # Check for duplicate sample assignments
+            if sample_id in sample_to_group:
+                raise ValueError(
+                    f"Duplicate sample in groups file: '{sample_id}' appears multiple times.\n"
+                    f"Each sample must belong to exactly one group."
+                )
+
+            sample_to_group[sample_id] = group_id
+
+            # Track samples per group for size warnings
+            if group_id not in groups_to_samples:
+                groups_to_samples[group_id] = []
+            groups_to_samples[group_id].append(sample_id)
+
+    # Validate all pipeline samples are present in groups file
+    missing_samples = set(pipeline_samples) - set(sample_to_group.keys())
+    if missing_samples:
+        raise ValueError(
+            f"The following samples from the pipeline are missing from the groups file:\n"
+            f"  {', '.join(sorted(missing_samples))}\n"
+            f"All pipeline samples must be assigned to a group."
+        )
+
+    # Warn about extra samples in groups file (not in pipeline)
+    extra_samples = set(sample_to_group.keys()) - set(pipeline_samples)
+    if extra_samples:
+        print(f"  Warning: Groups file contains samples not in pipeline (will be ignored):")
+        print(f"    {', '.join(sorted(extra_samples))}")
+
+    # Check for large groups and print warnings
+    for group_id, group_samples in groups_to_samples.items():
+        if len(group_samples) > 10:
+            print(f"  Warning: Group '{group_id}' has {len(group_samples)} samples.")
+            print(f"      Assembly quality may decrease with groups >10 samples")
+            print(f"      (see: https://github.com/yourusername/assembly-clustering-validation).")
+            print(f"      Consider splitting into smaller groups, or proceed if samples are highly related.")
+
+    return sample_to_group
+
+def get_groups_to_samples(sample_to_group):
+    """
+    Invert sample_to_group mapping to get groups_to_samples.
+
+    Args:
+        sample_to_group: dict mapping sample_id -> group_id
+
+    Returns:
+        dict: Mapping of group_id -> list of sample_ids
+    """
+    groups_to_samples = {}
+    for sample_id, group_id in sample_to_group.items():
+        if group_id not in groups_to_samples:
+            groups_to_samples[group_id] = []
+        groups_to_samples[group_id].append(sample_id)
+    return groups_to_samples
+
+# Initialize group mappings (will be populated during validation if custom_groups)
+SAMPLE_TO_GROUP = {}
+GROUPS_TO_SAMPLES = {}
+GROUP_IDS = []
 
 # ================================================================================
 # Configuration Validation
@@ -52,6 +171,7 @@ ASSEMBLY_STRATEGY = PIPELINE_CONFIG.get("assembly_strategy", "coassembly")
 
 def validate_config():
     """Validate pipeline configuration and provide helpful error messages"""
+    global SAMPLE_TO_GROUP, GROUPS_TO_SAMPLES, GROUP_IDS
 
     # Check start_from value
     valid_start_points = ["raw_reads", "cleaned_reads", "contigs"]
@@ -77,22 +197,42 @@ def validate_config():
             )
 
     # Check assembly strategy
-    valid_strategies = ["coassembly", "individual"]
+    # NOTE: "coassembly" has been removed - research shows it performs worst on all metrics
+    # The new two-stage workflow uses either "by_sample" or "by_group"
+    valid_strategies = ["by_sample", "by_group"]
     if ASSEMBLY_STRATEGY not in valid_strategies:
         raise ValueError(
             f"Invalid pipeline.assembly_strategy: '{ASSEMBLY_STRATEGY}'. "
-            f"Must be one of: {valid_strategies}"
+            f"Must be one of: {valid_strategies}\n"
+            f"Note: 'coassembly' has been removed - research shows global coassembly "
+            f"performs poorly. Use 'by_sample' (default) or 'by_group' instead."
         )
+
+    # Validate by_group configuration
+    if ASSEMBLY_STRATEGY == "by_group":
+        if not GROUPS_FILE:
+            raise ValueError(
+                "pipeline.assembly_strategy='by_group' but pipeline.groups_file not specified!\n"
+                "Please add: pipeline:\n  groups_file: 'path/to/sample_groups.tsv'"
+            )
+
+        # Parse and validate groups file
+        SAMPLE_TO_GROUP = parse_groups_file(GROUPS_FILE, SAMPLES)
+        GROUPS_TO_SAMPLES = get_groups_to_samples(SAMPLE_TO_GROUP)
+        GROUP_IDS = list(GROUPS_TO_SAMPLES.keys())
 
     # Warn if assembly is requested but starting from contigs
     if START_FROM == "contigs" and RUN_ASSEMBLY:
         print("WARNING: pipeline.run_assembly=true but start_from='contigs'. Assembly will be skipped.")
 
-    print(f"✓ Configuration valid")
+    print(f"  Configuration valid")
     print(f"  Start from: {START_FROM}")
     print(f"  Run assembly: {RUN_ASSEMBLY}")
     if RUN_ASSEMBLY:
         print(f"  Assembly strategy: {ASSEMBLY_STRATEGY}")
+        if ASSEMBLY_STRATEGY == "by_group":
+            print(f"  Groups file: {GROUPS_FILE}")
+            print(f"  Number of groups: {len(GROUP_IDS)}")
 
 # Run validation
 validate_config()
@@ -127,13 +267,11 @@ def get_final_outputs():
         outputs.extend([
             # Read count tracking
             f"{OUTDIR}/reports/read_counts.tsv",
-            # Sample QC flags
-            f"{OUTDIR}/reports/sample_qc_flags.tsv",
+            # Sample QC metrics
+            f"{OUTDIR}/reports/sample_qc_metrics.tsv",
             # Contamination flagging
             f"{OUTDIR}/reports/contamination_summary.tsv",
             f"{OUTDIR}/reports/contamination_bars.png",
-            f"{OUTDIR}/reports/contamination_boxes.png",
-            f"{OUTDIR}/reports/contamination_scatter.png",
             f"{OUTDIR}/reports/contamination_heatmap.png",
             # Primer B cross-contamination analysis
             f"{OUTDIR}/reports/primer_b_contamination_summary.tsv",
@@ -145,30 +283,19 @@ def get_final_outputs():
 
     # ===== Assembly Outputs =====
     # Include assembly outputs if assembly is requested and not starting from contigs
+    # NOTE: Both "by_sample" and "by_group" strategies use the two-stage workflow:
+    #   Stage 1: MEGAHIT assemblies (per-sample or per-group)
+    #   Stage 2: Rename contigs with unique IDs
+    #   Stage 3: Concatenate all renamed contigs
+    #   Stage 4: Flye meta-assembly
     if RUN_ASSEMBLY and START_FROM != "contigs":
-        # BBMerge outputs (needed for assembly)
-        outputs.extend(
-            expand(f"{OUTDIR}/bbmerge/{{sample}}_merged.fastq.gz", sample=SAMPLES)
-        )
-        outputs.extend(
-            expand(f"{OUTDIR}/bbmerge/{{sample}}_R1_unmerged.fastq.gz", sample=SAMPLES)
-        )
-        outputs.extend(
-            expand(f"{OUTDIR}/bbmerge/{{sample}}_R2_unmerged.fastq.gz", sample=SAMPLES)
-        )
-
-        # Assembly outputs
-        if ASSEMBLY_STRATEGY == "coassembly":
-            outputs.extend([
-                f"{OUTDIR}/assembly/megahit/final.contigs.fa",
-                f"{OUTDIR}/assembly/final.contigs.fa",  # Convenience symlink
-                f"{OUTDIR}/reports/assembly_stats.tsv"
-            ])
-        elif ASSEMBLY_STRATEGY == "individual":
-            outputs.extend(
-                expand(f"{OUTDIR}/assembly/per_sample/{{sample}}/final.contigs.fa", sample=SAMPLES)
-            )
-            outputs.append(f"{OUTDIR}/reports/assembly_stats.tsv")
+        # Final assembly output (strategy-specific paths for comparison)
+        # The final output is the Flye meta-assembly
+        outputs.extend([
+            f"{OUTDIR}/assembly/{ASSEMBLY_STRATEGY}/flye/assembly.fasta",
+            f"{OUTDIR}/assembly/{ASSEMBLY_STRATEGY}/final.contigs.fa",  # Convenience symlink to Flye output
+            f"{OUTDIR}/reports/assembly_stats_{ASSEMBLY_STRATEGY}.tsv"
+        ])
 
     return outputs
 
@@ -202,14 +329,12 @@ def get_qc_outputs():
         outputs.extend([
             # Read count tracking
             f"{OUTDIR}/reports/read_counts.tsv",
-            # Sample QC flags
-            f"{OUTDIR}/reports/sample_qc_flags.tsv",
+            # Sample QC metrics
+            f"{OUTDIR}/reports/sample_qc_metrics.tsv",
             # Contamination flagging summary
             f"{OUTDIR}/reports/contamination_summary.tsv",
             # Contamination plots
             f"{OUTDIR}/reports/contamination_bars.png",
-            f"{OUTDIR}/reports/contamination_boxes.png",
-            f"{OUTDIR}/reports/contamination_scatter.png",
             f"{OUTDIR}/reports/contamination_heatmap.png",
             # Primer B cross-contamination analysis
             f"{OUTDIR}/reports/primer_b_contamination_summary.tsv",
@@ -239,7 +364,9 @@ onstart:
     print(f"  Start from: {START_FROM}")
     print(f"  Run assembly: {RUN_ASSEMBLY}")
     if RUN_ASSEMBLY:
-        print(f"  Assembly strategy: {ASSEMBLY_STRATEGY}")
+        print(f"  Assembly strategy: {ASSEMBLY_STRATEGY} (two-stage workflow)")
+        if ASSEMBLY_STRATEGY == "by_group" and GROUP_IDS:
+            print(f"  Custom groups: {len(GROUP_IDS)} groups defined")
     print(f"  Samples: {len(SAMPLES)}")
     print(f"  Output directory: {OUTDIR}")
     print("="*80 + "\n")
@@ -247,15 +374,17 @@ onstart:
 
 onsuccess:
     print("\n" + "="*80)
-    print("✓ Pipeline completed successfully!")
+    print("Pipeline completed successfully!")
     print("="*80)
     print(f"Outputs available in: {OUTDIR}")
     if START_FROM == "raw_reads":
         print(f"  - QC reports: {OUTDIR}/reports/")
         print(f"  - Clean reads: {OUTDIR}/clean_reads/")
     if RUN_ASSEMBLY:
-        if ASSEMBLY_STRATEGY == "coassembly":
-            print(f"  - Assembly: {OUTDIR}/assembly/megahit/final.contigs.fa")
-        else:
-            print(f"  - Assemblies: {OUTDIR}/assembly/per_sample/*/final.contigs.fa")
+        print(f"  - Final assembly (Flye): {OUTDIR}/assembly/{ASSEMBLY_STRATEGY}/final.contigs.fa")
+        print(f"  - Assembly stats: {OUTDIR}/reports/assembly_stats_{ASSEMBLY_STRATEGY}.tsv")
+        if ASSEMBLY_STRATEGY == "by_sample":
+            print(f"  - Per-sample MEGAHIT assemblies: {OUTDIR}/assembly/per_sample/*/final.contigs.fa")
+        elif ASSEMBLY_STRATEGY == "by_group":
+            print(f"  - Per-group MEGAHIT assemblies: {OUTDIR}/assembly/per_group/*/final.contigs.fa")
     print("="*80 + "\n")

@@ -74,7 +74,6 @@ sample_auto_detection:
 
 # QC thresholds for flagging problematic samples
 qc_thresholds:
-  min_enrichment_score: 10      # ViromeQC enrichment score
   max_host_percent: 10          # Maximum % host reads (VLP failure if exceeded)
   max_rrna_percent: 20          # Maximum % rRNA after removal
   min_final_reads: 100000       # Minimum reads after all QC

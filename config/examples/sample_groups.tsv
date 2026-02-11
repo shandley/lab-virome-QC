@@ -1,0 +1,25 @@
+# Sample Groups File for Custom Assembly Strategy
+# ================================================
+# TSV file with exactly 2 columns: sample_id and group_id
+# Each sample must belong to exactly one group
+# All samples in the pipeline must be present in this file
+#
+# Group recommendations:
+# - Group biologically related samples (same patient, same treatment, etc.)
+# - Keep groups to ~10 samples or fewer for best assembly quality
+# - Groups >10 samples will generate a warning but will still run
+#
+# Format: sample_id<TAB>group_id
+sample_id	group_id
+sample001	patient_A
+sample002	patient_A
+sample003	patient_A
+sample004	patient_B
+sample005	patient_B
+sample006	patient_C
+sample007	patient_C
+sample008	patient_C
+sample009	patient_C
+sample010	control
+sample011	control
+sample012	control

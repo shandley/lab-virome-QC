@@ -16,14 +16,28 @@ This Snakemake pipeline provides robust QC specifically designed for:
 ### Key Features
 
 ✅ **NovaSeq-specific QC** - PolyG tail removal (critical for 2-channel chemistry)
-✅ **VLP enrichment assessment** - ViromeQC enrichment scoring
+✅ **Simplified 3-metric QC** - Host contamination, rRNA contamination, and final read count thresholds
 ✅ **Contamination flagging & removal** - PhiX/vector flagging (non-destructive), host & rRNA removal
 ✅ **Statistical outlier detection** - IQR-based contamination QC with publication-quality visualizations
 ✅ **Optical duplicate removal** - Illumina patterned flow cell artifacts
-✅ **Automated QC flagging** - Pass/fail criteria for each sample
-✅ **Rich reporting** - MultiQC dashboard with all metrics
+✅ **Cross-contamination detection** - Primer B analysis for sample mixing issues
+✅ **Automated QC assessment** - Quality categories (Excellent/Good/Concerning/Poor) for each sample
+✅ **Rich HTML reporting** - Self-contained virome dashboard with interactive plots
 ✅ **Modular assembly** - Optional viral metagenome assembly (individual or coassembly strategies)
 ✅ **Flexible entry points** - Start from raw reads or previously cleaned reads
+
+### Design Philosophy: Simplified QC for Practical Viromics
+
+**Why we simplified from ViromeQC to 3-metric system:**
+
+This pipeline originally used ViromeQC enrichment scoring but was redesigned for practical laboratory use:
+
+- **Computational efficiency**: Reduced memory and runtime requirements
+- **Clearer thresholds**: Host%, rRNA%, and read count are more interpretable than complex enrichment scores
+- **Faster turnaround**: Essential QC metrics available more quickly
+- **Better scalability**: Streamlined for routine batch processing
+
+The simplified system retains the essential QC capabilities while making the pipeline more accessible for routine use. For research requiring enrichment scoring, ViromeQC can be run separately on final clean reads.
 
 ---
 
@@ -44,25 +58,23 @@ Raw Reads (NovaSeq FASTQ)
     ↓
 [5] BBDuk (PhiX/vector contamination flagging) ← NEW: Non-destructive detection
     ↓
-[6] minimap2 (host depletion) ← QC metric for VLP success
+[6] minimap2 (host depletion) ← KEY QC metric for VLP success
     ↓
-[7] ViromeQC (enrichment assessment) ← PRIMARY QC metric
+[7] BBDuk (rRNA removal)
     ↓
-[8] BBDuk (rRNA removal)
+[8] FastQC (final clean reads)
     ↓
-[9] FastQC (final clean reads)
+[9] Virome Report (HTML dashboard with all metrics)
     ↓
-[10] MultiQC (aggregate all reports)
+[10] Contamination analysis (statistical outlier detection + plots)
     ↓
-[11] Contamination analysis (statistical outlier detection + plots)
-    ↓
-Clean reads + QC reports + Sample flags + Contamination plots
+Clean reads + QC reports + Quality metrics + Contamination plots
     ↓
     ↓ [OPTIONAL: Assembly Module]
     ↓
-[12] BBMerge (merge overlapping read pairs)
+[11] BBMerge (merge overlapping read pairs)
     ↓
-[13] MEGAHIT assembly
+[12] MEGAHIT assembly
     │   ├─→ Individual assembly (per-sample assemblies)
     │   └─→ Coassembly (all samples pooled)
     ↓
@@ -242,13 +254,13 @@ Edit `config/config.yaml` to set custom QC thresholds based on your lab's histor
 
 ```yaml
 qc_thresholds:
-  min_enrichment_score: 10      # ViromeQC enrichment score (adjust for your preps)
   max_host_percent: 10          # Maximum % host reads (adjust for your preps)
   max_rrna_percent: 20          # Maximum % rRNA after removal
   min_final_reads: 100000       # Minimum reads after QC (adjust for sequencing depth)
+  max_duplication_rate: 80      # Maximum % PCR duplicates (if using PCR dedup)
 ```
 
-**Note:** These are example starting points. Adjust based on your lab's VLP preparation performance and sequencing platform.
+**Note:** These are example starting points. The pipeline uses a simplified 3-metric QC system focused on host contamination, rRNA contamination, and final read count. Adjust thresholds based on your lab's VLP preparation performance and sequencing platform.
 
 ### 4. Resource Requirements
 
@@ -256,27 +268,27 @@ The pipeline is designed for NovaSeq data and requires adequate computational re
 
 **Memory Requirements:**
 
-| Step | Memory | Notes |
-|------|--------|-------|
-| Optical duplicate removal | 48 GB | Scales with read count (~0.5GB per million reads) |
-| Host depletion | 24 GB | Minimap2 index + read processing |
-| rRNA removal | 32 GB | 5GB for SILVA SSU+LSU database + read processing |
-| ViromeQC | 16 GB | Bowtie2/Diamond alignments |
+The pipeline requires adequate computational resources, with memory needs scaling based on your data size. The most memory-intensive steps are:
 
-These allocations handle NovaSeq samples up to 100 million reads. For smaller datasets or resource-limited systems, you can override these values using cluster profiles (see `profile/slurm/` for examples).
+- **Optical duplicate removal** - Scales with read count
+- **Host depletion** - Requires loading reference genome index
+- **rRNA removal** - Loads SILVA database plus read processing
+- **Assembly** (if enabled) - Memory scales with total input data
+
+Resource requirements can be customized for your system using cluster profiles (see `profile/slurm/` for examples).
 
 **Computational Resources:**
-- **Threads:** Most rules use 4-8 threads
-- **Runtime:** ~2-4 hours per sample (depends on sample size and cluster load)
-- **Storage:** ~10-20 GB per sample for intermediate files
+- **Threads:** Most rules use 4-8 threads for parallel processing
+- **Runtime:** Varies based on sample size, data quality, and available compute
+- **Storage:** Intermediate files scale with sample size
 
 **Assembly Resource Requirements (if enabled):**
 
 | Step | Memory | Threads | Notes |
 |------|--------|---------|-------|
-| BBMerge | 16 GB | 8 | Merge overlapping read pairs |
-| MEGAHIT (individual) | 16-32 GB | 12-16 | Per-sample assembly |
-| MEGAHIT (coassembly) | 64-128 GB | 24 | Memory scales with total data |
+| BBMerge | Moderate | 8 | Merge overlapping read pairs |
+| MEGAHIT (individual) | Moderate | 12-16 | Per-sample assembly |
+| MEGAHIT (coassembly) | High | 24 | Memory scales with total data volume |
 
 ---
 
@@ -442,18 +454,21 @@ results/
 │   └── univec/                # Per-sample vector/plasmid contamination stats
 ├── host_depleted/             # Host-depleted reads
 ├── rrna_removed/              # rRNA-depleted reads (clean)
-├── viromeqc/                  # ViromeQC enrichment scores
 ├── clean_reads/               # Symlinks to final clean reads
 ├── reports/
+│   ├── virome_report.html     # Primary HTML QC dashboard
+│   ├── virome_report.json     # Machine-readable QC data
 │   ├── read_counts.tsv        # Read counts at each step
-│   ├── sample_qc_flags.tsv    # Pass/fail flags per sample
+│   ├── sample_qc_metrics.tsv  # Quality assessment metrics per sample
 │   ├── contamination_summary.tsv        # Contamination levels per sample
 │   ├── contamination_bars.png           # Bar plot with outliers highlighted
 │   ├── contamination_boxes.png          # Distribution box plots
 │   ├── contamination_scatter.png        # PhiX vs vector correlation
-│   └── contamination_heatmap.png        # Heatmap overview
+│   ├── contamination_heatmap.png        # Heatmap overview
+│   ├── primer_b_contamination_summary.tsv  # Cross-contamination analysis
+│   └── primer_b_heatmap.png             # Cross-contamination heatmap
 ├── multiqc/
-│   └── multiqc_report.html    # Comprehensive QC dashboard
+│   └── multiqc_report.html    # Optional backup report (if enabled)
 └── logs/                      # All log files
 ```
 
@@ -495,37 +510,26 @@ Open `results/multiqc/multiqc_report.html` in a web browser.
 - **fastp**: Check adapter content, insert size distribution, duplication rates
 - **Read counts**: Track reads retained at each step
 
-### 2. Sample QC Flags
+### 2. Sample Quality Assessment
 
-Check `results/reports/sample_qc_flags.tsv`:
+Check `results/reports/sample_qc_metrics.tsv`:
 
 ```
-sample    enrichment_score  pass_enrichment  pass_host  pass_rrna  overall_pass  notes
-sample1   25.3              PASS             PASS       PASS       PASS          None
-sample2   3.2               FAIL             FAIL       PASS       FAIL          Low_enrichment(3.2);High_host(15.3%)
+sample    host_percent  rrna_percent  final_reads  quality_category  notes
+sample1   4.2          8.5           2500000      Excellent         None
+sample2   15.3         25.2          450000       Concerning        High_host(15.3%);High_rRNA(25.2%)
+sample3   2.1          12.4          150000       Good              Low_coverage(150000)
+sample4   28.7         45.1          80000        Poor              High_host(28.7%);High_rRNA(45.1%);Low_coverage(80000)
 ```
 
-**Interpretation:**
-- **PASS**: Sample meets all QC criteria
-- **FAIL**: Sample fails one or more criteria (check notes)
+**Quality Categories:**
+- **Excellent**: All metrics well within thresholds (≤5% host, ≤10% rRNA, ≥200K reads)
+- **Good**: All metrics pass basic thresholds but some approaching limits
+- **Concerning**: One metric exceeds threshold but sample may still be usable
+- **Poor**: Multiple metrics exceed thresholds, likely problematic sample
 - **WARNING**: Insufficient data to assess
 
-### 3. ViromeQC Enrichment Score
-
-**Most important QC metric for VLP samples!**
-
-- **Score >>1**: Good VLP enrichment (viral reads enriched vs bacterial)
-- **Score ~1**: Poor enrichment (essentially a metagenome)
-- **Score <1**: VLP prep failed (less viral content than typical metagenome)
-
-Low scores indicate:
-- Failed VLP preparation
-- Excessive bacterial contamination
-- Sample may need to be excluded or re-processed
-
-Compare your samples to lab standards and previous successful runs to determine acceptable thresholds.
-
-### 4. Contamination Flagging (PhiX & Vector)
+### 3. Contamination Flagging (PhiX & Vector)
 
 **NEW in this version!** See detailed guide: [CONTAMINATION_FLAGGING.md](CONTAMINATION_FLAGGING.md)
 
@@ -544,7 +548,7 @@ Check contamination plots in `results/reports/`:
 
 Check `results/reports/contamination_summary.tsv` for exact percentages.
 
-### 5. Host Contamination
+### 4. Host Contamination
 
 Check `results/host_depleted/*_host_stats.txt`
 
@@ -555,7 +559,7 @@ Compare your samples to:
 - Within-run median to identify outliers
 - Manufacturer specifications if using commercial VLP enrichment kits
 
-### 6. Read Retention
+### 5. Read Retention
 
 Check `results/reports/read_counts.tsv`
 
@@ -567,7 +571,7 @@ Check `results/reports/read_counts.tsv`
 
 Compare within-run samples to identify outliers with unusually high losses.
 
-### 7. Assembly Results (if enabled)
+### 6. Assembly Results (if enabled)
 
 #### BBMerge Statistics
 
@@ -664,9 +668,9 @@ Use your test data to decide between strategies:
 
 ### VLP Enrichment Assessment
 
-**Problem:** VLP prep can fail, resulting in metagenome-like contamination
-**Solution:** ViromeQC quantifies enrichment score
-**Action:** Compare scores across your batch to identify failed preps (significantly lower than batch median)
+**Problem:** VLP prep can fail, resulting in high host contamination
+**Solution:** Monitor host depletion percentages and cross-sample comparisons
+**Action:** Compare host% across your batch to identify failed preps (significantly higher than batch median)
 
 ### Host Contamination as QC Metric
 
@@ -677,17 +681,6 @@ Use your test data to decide between strategies:
 ---
 
 ## Troubleshooting
-
-### Pipeline fails at ViromeQC
-
-**Error:** `viromeQC.py: command not found`
-
-**Solution:**
-```bash
-# Install ViromeQC manually
-conda activate viromeqc
-pip install viromeqc
-```
 
 ### High memory usage
 
@@ -730,9 +723,9 @@ If you use this pipeline in your research, please cite:
 
 - **Snakemake:** Mölder et al. (2021) F1000Research
 - **fastp:** Chen et al. (2018) Bioinformatics
-- **ViromeQC:** Zolfo et al. (2019) Nature Biotechnology
 - **BBTools:** Bushnell (2014) BBMap
-- **MultiQC:** Ewels et al. (2016) Bioinformatics
+- **MEGAHIT:** Li et al. (2015) Bioinformatics (if using assembly)
+- **MultiQC:** Ewels et al. (2016) Bioinformatics (if using backup MultiQC)
 
 ---
 
@@ -811,7 +804,7 @@ Special considerations for:
 ## References
 
 1. Chen et al. (2018). fastp: an ultra-fast all-in-one FASTQ preprocessor. *Bioinformatics* 34(17):i884-i890.
-2. Zolfo et al. (2019). Detecting contamination in viromes using ViromeQC. *Nature Biotechnology* 37:1408-1412.
-3. Bushnell (2014). BBMap: A Fast, Accurate, Splice-Aware Aligner. *Lawrence Berkeley National Lab*
+2. Bushnell (2014). BBMap: A Fast, Accurate, Splice-Aware Aligner. *Lawrence Berkeley National Lab*
+3. Li et al. (2015). MEGAHIT: an ultra-fast single-node solution for large and complex metagenomics assembly. *Bioinformatics* 31(10):1674-1676.
 4. Ewels et al. (2016). MultiQC: summarize analysis results for multiple tools and samples. *Bioinformatics* 32(19):3047-3048.
 5. 2024 benchmarking studies on virome QC best practices

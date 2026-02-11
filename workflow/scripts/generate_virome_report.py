@@ -8,8 +8,8 @@ dashboard and publication-ready PDF reports.
 
 Replaces MultiQC with virome-specific reporting focused on:
 - Batch-level overview and outlier identification
-- Clear pass/fail assessment
-- Sample ranking by quality metrics
+- Quality metric visualization and assessment
+- Sample ranking by practical metrics
 - Interactive exploration and static sharing
 """
 
@@ -35,7 +35,7 @@ except ImportError:
 # Suppress pandas warnings for cleaner output
 warnings.filterwarnings('ignore', category=FutureWarning)
 
-class ViromeQCDataLoader:
+class ViromePipelineDataLoader:
     """
     Unified data loader for all virome QC data sources
     """
@@ -65,53 +65,14 @@ class ViromeQCDataLoader:
         """Load contamination summary data"""
         return pd.read_csv(contamination_file, sep='\t')
 
-    def load_qc_flags(self, qc_flags_file: str) -> pd.DataFrame:
-        """Load QC pass/fail flags"""
-        return pd.read_csv(qc_flags_file, sep='\t')
+    def load_qc_metrics(self, qc_metrics_file: str) -> pd.DataFrame:
+        """Load QC quality metrics"""
+        return pd.read_csv(qc_metrics_file, sep='\t')
 
     def load_primer_b_data(self, primer_b_file: str) -> pd.DataFrame:
         """Load primer B contamination data"""
         return pd.read_csv(primer_b_file, sep='\t')
 
-    def load_viromeqc_data(self, viromeqc_files: List[str]) -> pd.DataFrame:
-        """Load and parse ViromeQC enrichment scores"""
-        viromeqc_data = []
-
-        for vqc_file in viromeqc_files:
-            # Extract sample name from file path
-            sample = Path(vqc_file).stem.replace('_viromeqc', '')
-
-            enrichment_score = None
-            try:
-                # Parse as TSV file
-                df = pd.read_csv(vqc_file, sep='\t')
-
-                # Look for enrichment score column (handles typo "enrichmnet")
-                enrichment_cols = [col for col in df.columns
-                                 if 'enrichment' in col.lower() or 'enrichmnet' in col.lower()]
-
-                if enrichment_cols and len(df) > 0:
-                    enrichment_score = float(df[enrichment_cols[0]].iloc[0])
-
-            except Exception as e:
-                print(f"Warning: Failed to parse ViromeQC file {vqc_file}: {e}")
-                # Fallback to old method for backward compatibility
-                try:
-                    with open(vqc_file) as f:
-                        for line in f:
-                            if "enrichment" in line.lower():
-                                parts = line.strip().split()
-                                enrichment_score = float(parts[-1])
-                                break
-                except:
-                    pass
-
-            viromeqc_data.append({
-                'sample': sample,
-                'enrichment_score': enrichment_score
-            })
-
-        return pd.DataFrame(viromeqc_data)
 
     def parse_fastqc_summary(self, fastqc_files: List[str]) -> pd.DataFrame:
         """Parse FastQC summary statistics from ZIP files"""
@@ -136,7 +97,7 @@ class ViromeQCDataLoader:
 
         return pd.DataFrame(fastqc_data)
 
-class ViromeQCOutlierDetector:
+class ViromePipelineOutlierDetector:
     """
     Enhanced outlier detection across all QC metrics
     """
@@ -202,7 +163,7 @@ class ViromeQCOutlierDetector:
 
         return outlier_df
 
-class ViromeQCReportGenerator:
+class ViromePipelineReportGenerator:
     """
     Main class for generating virome QC reports
     """
@@ -213,8 +174,8 @@ class ViromeQCReportGenerator:
         self.outputs = outputs
         self.config = config
 
-        self.loader = ViromeQCDataLoader(config)
-        self.outlier_detector = ViromeQCOutlierDetector()
+        self.loader = ViromePipelineDataLoader(config)
+        self.outlier_detector = ViromePipelineOutlierDetector()
         self.unified_data = None
 
     def load_all_data(self):
@@ -224,12 +185,11 @@ class ViromeQCReportGenerator:
         # Load individual data sources
         read_counts = self.loader.load_read_counts(self.inputs['read_counts'])
         contamination = self.loader.load_contamination_data(self.inputs['contamination_summary'])
-        qc_flags = self.loader.load_qc_flags(self.inputs['qc_flags'])
+        qc_metrics = self.loader.load_qc_metrics(self.inputs['qc_metrics'])
         primer_b = self.loader.load_primer_b_data(self.inputs['primer_b_summary'])
-        # ViromeQC data loading removed - enrichment scoring no longer used
 
-        # Start with QC flags as the base (has all samples)
-        unified = qc_flags.set_index('sample')
+        # Start with QC metrics as the base (has all samples)
+        unified = qc_metrics.set_index('sample')
 
         # Merge other data sources
         if not read_counts.empty:
@@ -246,8 +206,7 @@ class ViromeQCReportGenerator:
         # Reset index to have sample as column
         unified = unified.reset_index()
 
-        # ViromeQC enrichment score correction logic removed - no longer needed
-        # QC flags now use simplified 3-metric system
+        # QC metrics now use simplified 3-metric system
 
         self.unified_data = unified
         print(f"Successfully loaded data for {len(unified)} samples")
@@ -388,9 +347,33 @@ class ViromeQCReportGenerator:
 
         return base64_images
 
-    def generate_html_report(self, template_dir: str, output_file: str) -> bool:
+    def link_images_externally(self, output_dir: str) -> Dict[str, str]:
         """
-        Generate HTML report using Jinja2 template with embedded images
+        Generate relative paths to image files instead of base64 encoding
+        """
+        image_files = {
+            'contamination_bars': 'contamination_bars.png',
+            'contamination_heatmap': 'contamination_heatmap.png',
+            'primer_b_heatmap': 'primer_b_heatmap.png'
+        }
+
+        image_links = {}
+
+        for key, filename in image_files.items():
+            image_path = Path(output_dir) / filename
+
+            if image_path.exists():
+                image_links[key] = filename  # Relative path for HTML
+                print(f"Linked external image: {filename}")
+            else:
+                print(f"Warning: Image file not found: {image_path}")
+                image_links[key] = None
+
+        return image_links
+
+    def generate_html_reports(self, template_dir: str, output_file: str, output_file_standalone: str = None) -> bool:
+        """
+        Generate both lightweight and standalone HTML reports
         """
         if not JINJA2_AVAILABLE:
             print("Skipping HTML generation - jinja2 not available")
@@ -403,33 +386,62 @@ class ViromeQCReportGenerator:
 
             # Generate report data
             report_data = self.generate_json_data()
-
-            # Encode images as base64 for embedding
             output_dir = Path(output_file).parent
-            base64_images = self.encode_images_as_base64(str(output_dir))
 
-            # Render template
-            html_content = template.render(
+            # Generate lightweight version (external images)
+            print("Generating lightweight HTML report with external images...")
+            image_links = self.link_images_externally(str(output_dir))
+
+            html_content_light = template.render(
                 batch_statistics=report_data['batch_statistics'],
                 samples=report_data['samples'],
                 config=report_data['config'],
                 timestamp=report_data['timestamp'],
-                report_data=report_data,  # Full data for JavaScript
-                base64_images=base64_images  # Base64-encoded images
+                report_data=report_data,
+                image_links=image_links,  # External image references
+                base64_images={},  # Empty for lightweight version
+                standalone_version=False
             )
 
-            # Write HTML file
             with open(output_file, 'w', encoding='utf-8') as f:
-                f.write(html_content)
+                f.write(html_content_light)
 
-            print(f"HTML report generated: {output_file}")
+            print(f"Lightweight HTML report generated: {output_file}")
+
+            # Generate standalone version (embedded images) if requested
+            if output_file_standalone:
+                print("Generating standalone HTML report with embedded images...")
+                base64_images = self.encode_images_as_base64(str(output_dir))
+
+                html_content_standalone = template.render(
+                    batch_statistics=report_data['batch_statistics'],
+                    samples=report_data['samples'],
+                    config=report_data['config'],
+                    timestamp=report_data['timestamp'],
+                    report_data=report_data,
+                    image_links={},  # Empty for standalone version
+                    base64_images=base64_images,  # Base64-encoded images
+                    standalone_version=True
+                )
+
+                with open(output_file_standalone, 'w', encoding='utf-8') as f:
+                    f.write(html_content_standalone)
+
+                print(f"Standalone HTML report generated: {output_file_standalone}")
+
             return True
 
         except Exception as e:
-            print(f"Error generating HTML report: {e}")
+            print(f"Error generating HTML reports: {e}")
             import traceback
             traceback.print_exc()
             return False
+
+    def generate_html_report(self, template_dir: str, output_file: str) -> bool:
+        """
+        Backward compatibility wrapper - generates lightweight version only
+        """
+        return self.generate_html_reports(template_dir, output_file)
 
     def generate(self):
         """Main generation method"""
@@ -456,18 +468,23 @@ class ViromeQCReportGenerator:
 
         print(f"\nGenerated structured report data: {output_json}")
 
-        # Phase 6: Generate HTML report
+        # Phase 6: Generate HTML reports (both versions)
         html_output = self.outputs.get('html_report')
+        html_standalone_output = self.outputs.get('html_report_standalone')
+
         if html_output:
             # Determine template directory relative to script location
             script_dir = Path(__file__).parent
             template_dir = script_dir.parent / 'templates'
 
-            success = self.generate_html_report(str(template_dir), html_output)
+            success = self.generate_html_reports(str(template_dir), html_output, html_standalone_output)
             if success:
-                print(f"HTML report generated: {html_output}")
+                print(f"HTML reports generated:")
+                print(f"  Lightweight version: {html_output}")
+                if html_standalone_output:
+                    print(f"  Standalone version: {html_standalone_output}")
             else:
-                print("Failed to generate HTML report")
+                print("Failed to generate HTML reports")
 
         # Phase 7: Generate PDF report (placeholder for future implementation)
         pdf_output = self.outputs.get('pdf_report')
@@ -491,7 +508,7 @@ def main():
     inputs = {
         'read_counts': snakemake.input.read_counts,
         'contamination_summary': snakemake.input.contamination_summary,
-        'qc_flags': snakemake.input.qc_flags,
+        'qc_metrics': snakemake.input.qc_metrics,
         'primer_b_summary': snakemake.input.primer_b_summary,
         'fastqc_files': snakemake.input.get('fastqc_files', [])
     }
@@ -499,13 +516,14 @@ def main():
     outputs = {
         'json_data': snakemake.output.json_data,
         'html_report': snakemake.output.get('html_report'),
+        'html_report_standalone': snakemake.output.get('html_report_standalone'),
         'pdf_report': snakemake.output.get('pdf_report')
     }
 
     config = snakemake.config
 
     # Generate report
-    generator = ViromeQCReportGenerator(inputs, outputs, config)
+    generator = ViromePipelineReportGenerator(inputs, outputs, config)
     report_data = generator.generate()
 
     return report_data

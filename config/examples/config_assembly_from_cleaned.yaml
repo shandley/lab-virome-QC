@@ -5,6 +5,12 @@
 # Use this when you already have cleaned reads from a previous QC run or
 # another pipeline.
 #
+# Two-Stage Assembly Workflow:
+#   Stage 1: MEGAHIT assemblies (per-sample or per-group)
+#   Stage 2: Rename contigs with unique IDs
+#   Stage 3: Concatenate all renamed contigs
+#   Stage 4: Flye meta-assembly for final polished output
+#
 # REQUIREMENTS:
 # - Cleaned reads must be in paired-end format:
 #   {sample}_R1.fastq.gz and {sample}_R2.fastq.gz
@@ -22,26 +28,33 @@ pipeline:
 
   # Assembly strategy (IMPORTANT: Choose based on your analysis goals)
   # ----------------------------------------------------------------------------
-  # "coassembly" (RECOMMENDED for viromes):
-  #   - Pools all samples into a single community assembly
-  #   - Better for detecting rare viruses (increased depth across samples)
-  #   - Creates shared reference for viral community analysis
-  #   - Compatible with phage-analysis pipeline and other downstream tools
-  #   - Output: Single contigs file at results/assembly/megahit/final.contigs.fa
+  # "by_sample" (DEFAULT, RECOMMENDED):
+  #   - Stage 1: MEGAHIT assembles each sample separately
+  #   - Stage 2-4: Contigs are renamed, concatenated, and meta-assembled with Flye
+  #   - Use for most virome studies
+  #   - Output: Final meta-assembled contigs + per-sample MEGAHIT assemblies
   #
-  # "individual":
-  #   - Assembles each sample separately
-  #   - Use when samples represent different conditions/timepoints
-  #   - Better for sample-specific strain resolution
-  #   - Output: Multiple contig files at results/assembly/per_sample/{sample}/final.contigs.fa
+  # "by_group":
+  #   - Stage 1: MEGAHIT assembles user-defined groups of related samples
+  #   - Stage 2-4: Contigs are renamed, concatenated, and meta-assembled with Flye
+  #   - Use when samples are biologically related (same patient, same treatment)
+  #   - Requires: groups_file parameter (TSV with sample_id and group_id columns)
+  #   - Output: Final meta-assembled contigs + per-group MEGAHIT assemblies
+  #
+  # NOTE: Global "coassembly" has been removed - research shows it performs
+  # worst on all assembly metrics. Use "by_sample" or "by_group" instead.
   # ----------------------------------------------------------------------------
-  assembly_strategy: "coassembly"
+  assembly_strategy: "by_sample"
 
-  cleaned_reads_dir: "path/to/cleaned/reads"  # ⚠️ UPDATE THIS PATH!
+  # Groups file (required only if assembly_strategy="by_group")
+  # See config/examples/sample_groups.tsv for format
+  # groups_file: "config/examples/sample_groups.tsv"
+
+  cleaned_reads_dir: "path/to/cleaned/reads"  # UPDATE THIS PATH!
 
 # Assembly parameters
 assembly:
-  min_contig_length: 1000       # Keep contigs >= 1kb
+  min_contig_length: 1000       # Keep contigs >= 1kb (MEGAHIT parameter)
 
 # Samples - specify manually or use auto-detection
 # NOTE: Sample names must match filenames in cleaned_reads_dir

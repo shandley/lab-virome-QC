@@ -325,7 +325,7 @@ rule host_depletion:
     For VLP-enriched samples, high host contamination (>10%) indicates VLP prep failure
     This step serves dual purpose:
     1. Remove host sequences from analysis
-    2. QC metric for VLP enrichment success
+    2. QC metric for VLP prep efficiency
 
     Note: Now operates after primer B removal (PhiX/vector flagging doesn't filter reads)
     Note: Minimap2 loads host genome index (~12GB for human) plus read processing
@@ -435,10 +435,21 @@ rule remove_pcr_duplicates:
 
     Note: Files not marked as temp() to avoid broken symlinks in QC-only mode.
           When enabled, these are the final clean reads accessed via symlinks.
+
+    Note: Input depends on rRNA removal toggle - uses rrna_removed if enabled,
+          host_depleted if disabled.
     """
     input:
-        r1 = f"{OUTDIR}/rrna_removed/{{sample}}_R1.fastq.gz",
-        r2 = f"{OUTDIR}/rrna_removed/{{sample}}_R2.fastq.gz"
+        r1 = lambda wc: (
+            f"{OUTDIR}/rrna_removed/{wc.sample}_R1.fastq.gz"
+            if config.get("rrna_removal", {}).get("enabled", True)
+            else f"{OUTDIR}/host_depleted/{wc.sample}_R1.fastq.gz"
+        ),
+        r2 = lambda wc: (
+            f"{OUTDIR}/rrna_removed/{wc.sample}_R2.fastq.gz"
+            if config.get("rrna_removal", {}).get("enabled", True)
+            else f"{OUTDIR}/host_depleted/{wc.sample}_R2.fastq.gz"
+        )
     output:
         r1 = f"{OUTDIR}/pcr_deduplicated/{{sample}}_R1.fastq.gz",
         r2 = f"{OUTDIR}/pcr_deduplicated/{{sample}}_R2.fastq.gz",
@@ -465,17 +476,17 @@ rule remove_pcr_duplicates:
         grep -E "^(Input|Duplicates|Result)" {log} > {output.stats} || true
         """
 
-# ViromeQC rule removed - enrichment scoring was redundant with host/rRNA contamination metrics
-# This removes the most computationally expensive QC step (16GB memory, 6-hour runtime)
-# Quality assessment now relies on directly measurable metrics: host_percent, rrna_percent, final_reads
+# Quality assessment relies on directly measurable metrics: host_percent, rrna_percent, final_reads
 
 rule final_fastqc:
     """
     Final FastQC on clean reads
+
+    Uses the final QC step output based on config toggles.
     """
     input:
-        r1 = f"{OUTDIR}/rrna_removed/{{sample}}_R1.fastq.gz",
-        r2 = f"{OUTDIR}/rrna_removed/{{sample}}_R2.fastq.gz"
+        r1 = lambda wc: get_clean_reads_source(wc.sample, "R1"),
+        r2 = lambda wc: get_clean_reads_source(wc.sample, "R2")
     output:
         html_r1 = f"{OUTDIR}/fastqc/final/{{sample}}_R1_fastqc.html",
         html_r2 = f"{OUTDIR}/fastqc/final/{{sample}}_R2_fastqc.html",
@@ -491,24 +502,37 @@ rule final_fastqc:
         fastqc -t {threads} -o $(dirname {output.html_r1}) {input.r1} {input.r2} 2>&1 | tee {log}
         """
 
+def get_clean_reads_source(sample, read):
+    """
+    Determine the source of clean reads based on config toggles.
+
+    Priority order (latest step that is enabled):
+    1. pcr_deduplicated (if PCR dedup enabled)
+    2. rrna_removed (if rRNA removal enabled)
+    3. host_depleted (fallback when both disabled)
+    """
+    pcr_dedup_enabled = config.get("deduplication", {}).get("pcr", {}).get("enabled", False)
+    rrna_enabled = config.get("rrna_removal", {}).get("enabled", True)
+
+    if pcr_dedup_enabled:
+        return f"{OUTDIR}/pcr_deduplicated/{sample}_{read}.fastq.gz"
+    elif rrna_enabled:
+        return f"{OUTDIR}/rrna_removed/{sample}_{read}.fastq.gz"
+    else:
+        return f"{OUTDIR}/host_depleted/{sample}_{read}.fastq.gz"
+
 rule symlink_clean_reads:
     """
     Create symlinks to final clean reads for easy access
 
-    Links to either pcr_deduplicated or rrna_removed files depending on
-    whether PCR deduplication is enabled in the config.
+    Links to the appropriate QC step based on config toggles:
+    - pcr_deduplicated (if PCR dedup enabled)
+    - rrna_removed (if rRNA removal enabled, default)
+    - host_depleted (if both rRNA and PCR dedup disabled)
     """
     input:
-        r1 = lambda wc: (
-            f"{OUTDIR}/pcr_deduplicated/{wc.sample}_R1.fastq.gz"
-            if config.get("deduplication", {}).get("pcr", {}).get("enabled", False)
-            else f"{OUTDIR}/rrna_removed/{wc.sample}_R1.fastq.gz"
-        ),
-        r2 = lambda wc: (
-            f"{OUTDIR}/pcr_deduplicated/{wc.sample}_R2.fastq.gz"
-            if config.get("deduplication", {}).get("pcr", {}).get("enabled", False)
-            else f"{OUTDIR}/rrna_removed/{wc.sample}_R2.fastq.gz"
-        )
+        r1 = lambda wc: get_clean_reads_source(wc.sample, "R1"),
+        r2 = lambda wc: get_clean_reads_source(wc.sample, "R2")
     output:
         r1 = f"{OUTDIR}/clean_reads/{{sample}}_R1.fastq.gz",
         r2 = f"{OUTDIR}/clean_reads/{{sample}}_R2.fastq.gz"
@@ -528,6 +552,7 @@ rule count_reads:
 
     Tracks reads through the full pipeline including primer B removal
     Note: phix_removed step removed since we now flag instead of filter
+    Note: Conditionally includes rrna_removed step if enabled
     Note: Conditionally includes pcr_deduplicated step if enabled
     Note: Can take several hours for large samples (50M+ reads)
     """
@@ -538,13 +563,15 @@ rule count_reads:
         pb_step1_r1 = f"{OUTDIR}/primer_b/step1/{{sample}}_R1.fastq.gz",
         pb_step2_r1 = f"{OUTDIR}/primer_b/step2/{{sample}}_R1.fastq.gz",
         host_r1 = f"{OUTDIR}/host_depleted/{{sample}}_R1.fastq.gz",
-        rrna_r1 = f"{OUTDIR}/rrna_removed/{{sample}}_R1.fastq.gz",
-        pcr_dedup_r1 = lambda wc: f"{OUTDIR}/pcr_deduplicated/{wc.sample}_R1.fastq.gz" if config.get("deduplication", {}).get("pcr", {}).get("enabled", False) else []
+        rrna_r1 = lambda wc: f"{OUTDIR}/rrna_removed/{wc.sample}_R1.fastq.gz" if config.get("rrna_removal", {}).get("enabled", True) else [],
+        pcr_dedup_r1 = lambda wc: f"{OUTDIR}/pcr_deduplicated/{wc.sample}_R1.fastq.gz" if config.get("deduplication", {}).get("pcr", {}).get("enabled", False) else [],
+        clean_r1 = lambda wc: get_clean_reads_source(wc.sample, "R1")
     output:
         temp(f"{OUTDIR}/reports/read_counts/{{sample}}.tsv")
     resources:
         time_min = 360
     params:
+        rrna_enabled = config.get("rrna_removal", {}).get("enabled", True),
         pcr_dedup_enabled = config.get("deduplication", {}).get("pcr", {}).get("enabled", False)
     conda:
         "../envs/qc.yaml"
@@ -557,15 +584,19 @@ rule count_reads:
         echo -e "{wildcards.sample}\tprimer_b_fwd\t$(zcat {input.pb_step1_r1} | wc -l | awk '{{print $1/4}}')" >> {output}
         echo -e "{wildcards.sample}\tprimer_b_rc\t$(zcat {input.pb_step2_r1} | wc -l | awk '{{print $1/4}}')" >> {output}
         echo -e "{wildcards.sample}\thost_depleted\t$(zcat {input.host_r1} | wc -l | awk '{{print $1/4}}')" >> {output}
-        echo -e "{wildcards.sample}\trrna_removed\t$(zcat {input.rrna_r1} | wc -l | awk '{{print $1/4}}')" >> {output}
+
+        # Conditionally add rRNA removal stats
+        if [ "{params.rrna_enabled}" = "True" ]; then
+            echo -e "{wildcards.sample}\trrna_removed\t$(zcat {input.rrna_r1} | wc -l | awk '{{print $1/4}}')" >> {output}
+        fi
 
         # Conditionally add PCR dedup stats
         if [ "{params.pcr_dedup_enabled}" = "True" ]; then
             echo -e "{wildcards.sample}\tpcr_deduplicated\t$(zcat {input.pcr_dedup_r1} | wc -l | awk '{{print $1/4}}')" >> {output}
-            echo -e "{wildcards.sample}\tclean\t$(zcat {input.pcr_dedup_r1} | wc -l | awk '{{print $1/4}}')" >> {output}
-        else
-            echo -e "{wildcards.sample}\tclean\t$(zcat {input.rrna_r1} | wc -l | awk '{{print $1/4}}')" >> {output}
         fi
+
+        # Final clean reads (from whatever the last enabled step is)
+        echo -e "{wildcards.sample}\tclean\t$(zcat {input.clean_r1} | wc -l | awk '{{print $1/4}}')" >> {output}
         """
 
 rule merge_read_counts:
@@ -614,8 +645,6 @@ rule plot_contamination:
         f"{OUTDIR}/reports/contamination_summary.tsv"
     output:
         f"{OUTDIR}/reports/contamination_bars.png",
-        f"{OUTDIR}/reports/contamination_boxes.png",
-        f"{OUTDIR}/reports/contamination_scatter.png",
         f"{OUTDIR}/reports/contamination_heatmap.png"
     params:
         output_prefix = f"{OUTDIR}/reports/contamination"
@@ -667,22 +696,23 @@ rule plot_primer_b_heatmap:
     script:
         "../scripts/plot_primer_b_heatmap.py"
 
-rule qc_flags:
+rule qc_metrics:
     """
-    Generate QC pass/fail flags for each sample based on:
-    - ViromeQC enrichment score
-    - % host reads
-    - % rRNA reads
-    - Final read count
+    Generate QC quality metrics for each sample based on:
+    - % host reads (VLP prep efficiency)
+    - % rRNA reads (biological contamination)
+    - Final read count after QC (sequencing depth)
+
+    Provides quality categories rather than binary pass/fail assessments.
     """
     input:
         read_counts = f"{OUTDIR}/reports/read_counts.tsv"
     output:
-        f"{OUTDIR}/reports/sample_qc_flags.tsv"
+        f"{OUTDIR}/reports/sample_qc_metrics.tsv"
     conda:
         "../envs/qc.yaml"
     script:
-        "../scripts/generate_qc_flags.py"
+        "../scripts/generate_qc_metrics.py"
 
 rule multiqc:
     """
@@ -699,8 +729,8 @@ rule multiqc:
         expand(f"{OUTDIR}/fastp/{{sample}}_fastp.json", sample=SAMPLES),
         # Read counts
         f"{OUTDIR}/reports/read_counts.tsv",
-        # QC flags
-        f"{OUTDIR}/reports/sample_qc_flags.tsv",
+        # QC metrics
+        f"{OUTDIR}/reports/sample_qc_metrics.tsv",
         # Contamination summary
         f"{OUTDIR}/reports/contamination_summary.tsv"
     output:
@@ -721,17 +751,18 @@ rule multiqc:
 
 rule virome_report:
     """
-    Generate user-friendly virome QC report (replaces MultiQC)
+    Generate user-friendly virome QC reports (replaces MultiQC)
 
-    Creates both interactive HTML dashboard and structured JSON data
-    for virome-specific quality assessment with batch-level overview
-    and easy outlier identification.
+    Creates dual HTML outputs for different use cases:
+    - virome_report.html: Lightweight version with external images (~2-3MB)
+    - virome_report_standalone.html: Self-contained with embedded images (~16MB)
+    Plus structured JSON data for virome-specific quality assessment.
     """
     input:
         # QC data sources
         read_counts=f"{OUTDIR}/reports/read_counts.tsv",
         contamination_summary=f"{OUTDIR}/reports/contamination_summary.tsv",
-        qc_flags=f"{OUTDIR}/reports/sample_qc_flags.tsv",
+        qc_metrics=f"{OUTDIR}/reports/sample_qc_metrics.tsv",
         primer_b_summary=f"{OUTDIR}/reports/primer_b_contamination_summary.tsv",
         # Plot files for report
         contamination_plots=[
@@ -743,6 +774,7 @@ rule virome_report:
         fastqc_files=expand(f"{OUTDIR}/fastqc/final/{{sample}}_R1_fastqc.zip", sample=SAMPLES)
     output:
         html_report=f"{OUTDIR}/reports/virome_report.html",
+        html_report_standalone=f"{OUTDIR}/reports/virome_report_standalone.html",
         json_data=f"{OUTDIR}/reports/virome_report_data.json"
     log:
         f"{OUTDIR}/logs/virome_report.log"

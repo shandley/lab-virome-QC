@@ -23,9 +23,26 @@ pipeline:
   run_assembly: false
 
   # Assembly strategy (only used if run_assembly=true)
-  # "coassembly": Combine all samples into one assembly (recommended for viromes)
-  # "individual": Assemble each sample separately
-  assembly_strategy: "coassembly"
+  # Both strategies use a two-stage workflow: MEGAHIT -> Flye meta-assembly
+  #
+  # "by_sample": Assemble each sample separately with MEGAHIT, then combine
+  #              all contigs via Flye meta-assembly (default, recommended)
+  # "by_group": Assemble user-defined groups with MEGAHIT, then combine
+  #             all group contigs via Flye meta-assembly
+  #
+  # NOTE: Global "coassembly" has been removed - research shows it performs
+  # worst on all metrics. Use "by_sample" or "by_group" instead.
+  assembly_strategy: "by_sample"
+
+  # Groups file (required if assembly_strategy="by_group")
+  # TSV file with exactly 2 columns: sample_id and group_id
+  # Example:
+  #   sample001    patient_A
+  #   sample002    patient_A
+  #   sample003    patient_B
+  #   sample004    patient_B
+  # See config/examples/sample_groups.tsv for a template
+  groups_file: null
 
   # If start_from="cleaned_reads", specify directory containing cleaned reads
   # Format: {sample}_R1.fastq.gz and {sample}_R2.fastq.gz
@@ -49,6 +66,13 @@ deduplication:
 
     # Note: Optical duplicates are ALWAYS removed (clumpify step)
     # This setting only controls PCR duplicate removal (dedupe.sh)
+
+# rRNA removal settings
+rrna_removal:
+  # Enable rRNA removal step (default: true)
+  # Disable for samples where rRNA is not expected (e.g., DNA-only protocols)
+  # or when you want to retain rRNA for downstream analysis
+  enabled: true
 
 # Reference databases
 references:
@@ -172,7 +196,6 @@ primer_b:
   bbduk_rc: {ktrim: "r", k: 16, mink: 9, rcomp: "f", ordered: "t", ow: "t"}
 
 # Simplified QC thresholds - 3 essential metrics only
-# ViromeQC enrichment scoring removed as redundant with contamination measurements
 qc_thresholds:
   max_host_percent: 10          # Maximum % host reads (VLP prep efficiency)
   max_rrna_percent: 20          # Maximum % rRNA contamination (biological contamination)
@@ -189,13 +212,12 @@ reporting:
   include_fastqc_details: true   # Include FastQC metrics in report
   outlier_detection_method: "iqr"  # Options: iqr, zscore, modified_zscore
 
-  # Quality scoring weights for sample ranking
+  # Quality scoring weights for sample ranking (DEPRECATED: Now using quality categories)
   quality_weights:
-    enrichment_score: 0.30       # ViromeQC enrichment weight
-    read_retention: 0.25         # Final read retention weight
-    phix_contamination: 0.20     # PhiX contamination weight (negative)
-    vector_contamination: 0.15   # Vector contamination weight (negative)
-    total_contamination: 0.10    # Total contamination weight (negative)
+    read_retention: 0.40         # Final read retention weight
+    phix_contamination: 0.25     # PhiX contamination weight (negative)
+    vector_contamination: 0.20   # Vector contamination weight (negative)
+    total_contamination: 0.15    # Total contamination weight (negative)
 
   # Visualization settings
   max_samples_in_plots: 100      # Limit for performance with large batches

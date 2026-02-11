@@ -36,21 +36,37 @@ def identify_outliers(series):
 
 def plot_contamination_bars(df, output_prefix):
     """
-    Create stacked bar plot with clean professional styling to match rRNA histogram
+    Create stacked bar plot with smart scaling for large datasets
     """
-    # Dynamic sizing based on sample count
     n_samples = len(df)
-    fig_width = max(16, n_samples * 0.7)
+
+    # Smart scaling: For large datasets, focus on top contaminants
+    if n_samples > 50:
+        # Sort by total contamination and take top N worst samples (configurable)
+        top_n = min(25, n_samples)  # Show up to 25 samples or all if fewer
+        df_sorted = df.sort_values('total_contamination_percent', ascending=False)
+        df_display = df_sorted.head(top_n).sort_values('total_contamination_percent', ascending=True)
+        title_suffix = f"\nShowing Top {top_n} Highest Contamination (of {n_samples} total samples)"
+        n_display = len(df_display)
+    else:
+        # Show all samples for smaller datasets
+        df_display = df.sort_values('total_contamination_percent', ascending=True)
+        title_suffix = ""
+        n_display = n_samples
+
+    # Controlled sizing - maximum 20 inches width
+    fig_width = min(20, max(12, n_display * 0.8))
     fig, ax = plt.subplots(figsize=(fig_width, 6))
 
-    # Identify outliers
+    # Identify outliers in full dataset (for coloring)
     df['is_outlier'] = identify_outliers(df['total_contamination_percent'])
 
-    # Sort by total contamination
-    df_sorted = df.sort_values('total_contamination_percent', ascending=True).copy()
+    # Merge outlier info into display dataset
+    df_display = df_display.copy()
+    df_display['is_outlier'] = df_display.index.map(lambda idx: df.loc[idx, 'is_outlier'])
 
     # Create bars with steel blue theme (matching rRNA plot)
-    x = range(len(df_sorted))
+    x = range(len(df_display))
     width = 0.8
 
     # Use steel blue color scheme for consistency
@@ -60,39 +76,39 @@ def plot_contamination_bars(df, output_prefix):
     outlier_vector_color = '#F8D7DA'  # Light red for outlier vectors
 
     # Color outliers differently
-    phix_colors = [outlier_phix_color if outlier else phix_color for outlier in df_sorted['is_outlier']]
-    vector_colors = [outlier_vector_color if outlier else vector_color for outlier in df_sorted['is_outlier']]
+    phix_colors = [outlier_phix_color if outlier else phix_color for outlier in df_display['is_outlier']]
+    vector_colors = [outlier_vector_color if outlier else vector_color for outlier in df_display['is_outlier']]
 
     # Plot bars with clean edges
-    ax.bar(x, df_sorted['phix_percent'], width, color=phix_colors,
+    ax.bar(x, df_display['phix_percent'], width, color=phix_colors,
            edgecolor='#2F5F8F', linewidth=0.8, label='PhiX')
-    ax.bar(x, df_sorted['vector_percent'], width,
-           bottom=df_sorted['phix_percent'],
+    ax.bar(x, df_display['vector_percent'], width,
+           bottom=df_display['phix_percent'],
            color=vector_colors, edgecolor='#2F5F8F', linewidth=0.8, label='Vector/Plasmid')
 
-    # Calculate statistics for reference lines
+    # Calculate statistics for reference lines (use full dataset for context)
     mean_total = df['total_contamination_percent'].mean()
     median_total = df['total_contamination_percent'].median()
 
     # Add mean and median reference lines (matching rRNA style)
     ax.axhline(y=mean_total, color='#FF8C00', linestyle='--', linewidth=2.5,
-               alpha=0.9, label=f'Mean: {mean_total:.3f}%')
+               alpha=0.9, label=f'Batch Mean: {mean_total:.3f}%')
     ax.axhline(y=median_total, color='#DC3545', linestyle='--', linewidth=2.5,
-               alpha=0.9, label=f'Median: {median_total:.3f}%')
+               alpha=0.9, label=f'Batch Median: {median_total:.3f}%')
 
     # Formatting with Arial font (matching rRNA plot)
     ax.set_xlabel('Sample', fontsize=12, fontweight='bold', fontfamily='Arial')
     ax.set_ylabel('Contamination (%)', fontsize=12, fontweight='bold', fontfamily='Arial')
-    ax.set_title(f'Contamination Distribution (n={n_samples})\nPhiX174 + Vector/Plasmid Detection',
+    ax.set_title(f'Contamination Distribution (n={n_samples}){title_suffix}\nPhiX174 + Vector/Plasmid Detection',
                 fontsize=14, fontweight='bold', fontfamily='Arial')
     ax.set_xticks(x)
 
-    # Adjust font size based on sample count
-    label_fontsize = 8 if n_samples > 40 else 9 if n_samples > 30 else 10
-    ax.set_xticklabels(df_sorted['sample'], rotation=60, ha='right', fontsize=label_fontsize)
+    # Adjust font size based on display sample count
+    label_fontsize = 8 if n_display > 20 else 10
+    ax.set_xticklabels(df_display['sample'], rotation=60, ha='right', fontsize=label_fontsize)
 
     # Highlight outlier sample names in red
-    for i, (idx, row) in enumerate(df_sorted.iterrows()):
+    for i, (idx, row) in enumerate(df_display.iterrows()):
         if row['is_outlier']:
             ax.get_xticklabels()[i].set_color('#DC3545')
             ax.get_xticklabels()[i].set_fontweight('bold')
@@ -202,9 +218,12 @@ def plot_contamination_boxes(df, output_prefix):
 
 def plot_contamination_scatter(df, output_prefix):
     """
-    Create scatter plot with clean professional styling to match rRNA histogram
+    Create scatter plot with smart labeling for large datasets
     """
-    fig, ax = plt.subplots(figsize=(10, 8))
+    n_samples = len(df)
+
+    # Use controlled size
+    fig, ax = plt.subplots(figsize=(12, 8))
 
     # Identify outliers
     phix_outliers = identify_outliers(df['phix_percent'])
@@ -245,9 +264,13 @@ def plot_contamination_scatter(df, output_prefix):
     ax.axvline(x=phix_median, color='#DC3545', linestyle='--', linewidth=2,
                alpha=0.8, label=f'PhiX Median: {phix_median:.3f}%')
 
-    # Label outliers with simplified annotation
+    # Label outliers with smart annotation (limit for readability)
     if len(df_outliers) > 0:
-        for _, row in df_outliers.iterrows():
+        # Only label top 10 outliers to avoid overcrowding
+        n_to_label = min(10, len(df_outliers))
+        df_top_outliers = df_outliers.nlargest(n_to_label, 'total_contamination_percent')
+
+        for _, row in df_top_outliers.iterrows():
             # Simple annotation without overcrowding
             sample_short = row['sample'].split('_')[-1] if '_' in row['sample'] else row['sample']
             if len(sample_short) > 10:
@@ -261,11 +284,18 @@ def plot_contamination_scatter(df, output_prefix):
                                 alpha=0.8, edgecolor='#DC3545'),
                        ha='left')
 
+        # Add note if we truncated labels
+        if len(df_outliers) > 10:
+            ax.text(0.02, 0.02, f'Labeling top {n_to_label} of {len(df_outliers)} outliers',
+                   transform=ax.transAxes, fontsize=8, style='italic', color='#666666')
+
     # Formatting with Arial font (matching rRNA plot)
     ax.set_xlabel('PhiX174 Contamination (%)', fontsize=12, fontweight='bold', fontfamily='Arial')
     ax.set_ylabel('Vector/Plasmid Contamination (%)', fontsize=12, fontweight='bold', fontfamily='Arial')
-    ax.set_title(f'Contamination Correlation (n={len(df)})\nPhiX174 vs Vector/Plasmid Detection',
-                fontsize=14, fontweight='bold', fontfamily='Arial')
+    title_text = f'Contamination Correlation (n={n_samples})\nPhiX174 vs Vector/Plasmid Detection'
+    if len(df_outliers) > 10:
+        title_text += f'\nTop {min(10, len(df_outliers))} outliers labeled'
+    ax.set_title(title_text, fontsize=14, fontweight='bold', fontfamily='Arial')
 
     # Clean grid (matching rRNA style)
     ax.grid(True, alpha=0.4, linestyle='-', linewidth=0.5, color='#E5E5E5')
@@ -287,67 +317,85 @@ def plot_contamination_scatter(df, output_prefix):
 
 def plot_contamination_heatmap(df, output_prefix):
     """
-    Create heatmap with clean professional styling to match rRNA histogram
+    Create heatmap with vertical layout (samples on rows) for better scalability
     """
-    # Identify outliers
+    n_samples = len(df)
     total_outliers = identify_outliers(df['total_contamination_percent'])
 
-    # Prepare data for heatmap
-    heatmap_data = df[['sample', 'phix_percent', 'vector_percent']].set_index('sample').T
+    # Smart sampling for large datasets
+    if n_samples > 100:
+        # Take all outliers + top 20 contaminants + random sample of 30 others
+        outlier_samples = df[total_outliers]['sample'].tolist()
+        top_contaminants = df.nlargest(20, 'total_contamination_percent')['sample'].tolist()
 
-    # Sort columns by total contamination
-    col_order = df.sort_values('total_contamination_percent', ascending=False)['sample']
-    heatmap_data = heatmap_data[col_order]
+        # Get non-outlier, non-top samples for random selection
+        excluded = set(outlier_samples + top_contaminants)
+        other_samples = df[~df['sample'].isin(excluded)].sample(min(30, len(df) - len(excluded)))['sample'].tolist()
 
-    # Dynamic sizing based on sample count
-    n_samples = len(df)
-    fig_width = max(16, n_samples * 0.5)
-    fig, ax = plt.subplots(figsize=(fig_width, 6))
+        selected_samples = list(set(outlier_samples + top_contaminants + other_samples))
+        df_display = df[df['sample'].isin(selected_samples)].copy()
+        title_suffix = f"\nShowing outliers + top contaminants + representative sample (n={len(selected_samples)} of {n_samples})"
+    else:
+        df_display = df.copy()
+        title_suffix = ""
 
-    # Create heatmap with steel blue color scheme (similar to rRNA styling)
-    # Using a colormap that matches the steel blue theme
+    # Vertical layout: samples on rows, contamination types on columns
+    heatmap_data = df_display[['sample', 'phix_percent', 'vector_percent']].set_index('sample')
+
+    # Sort rows by total contamination (highest first)
+    df_display['total_contamination'] = df_display['phix_percent'] + df_display['vector_percent']
+    row_order = df_display.sort_values('total_contamination', ascending=False)['sample']
+    heatmap_data = heatmap_data.loc[row_order]
+
+    # Dynamic sizing: height grows with samples, width stays manageable
+    n_display = len(df_display)
+    fig_height = min(40, max(8, n_display * 0.3))  # Max 40 inches height
+    fig_width = 12  # Fixed reasonable width
+    fig, ax = plt.subplots(figsize=(fig_width, fig_height))
+
+    # Create heatmap with vertical layout (samples on rows)
     sns.heatmap(heatmap_data, annot=True, fmt='.3f', cmap='Blues',
                 cbar_kws={'label': 'Contamination (%)', 'shrink': 0.8},
                 linewidths=0.8, linecolor='white', ax=ax,
                 vmin=0, vmax=df[['phix_percent', 'vector_percent']].max().max(),
                 square=False)
 
-    # Highlight outlier columns with red outline (matching rRNA outlier style)
+    # Highlight outlier rows with red outline
     outlier_samples = df[total_outliers]['sample'].values
-    for i, sample in enumerate(col_order):
+    for i, sample in enumerate(row_order):
         if sample in outlier_samples:
-            # Add red box around outlier columns
-            col_idx = i
-            ax.add_patch(plt.Rectangle((col_idx, 0), 1, 2, fill=False,
+            # Add red box around outlier rows
+            row_idx = i
+            ax.add_patch(plt.Rectangle((0, row_idx), 2, 1, fill=False,
                                       edgecolor='#DC3545', lw=3, zorder=10))
 
-    # Formatting with Arial font (matching rRNA plot)
-    ax.set_xlabel('Sample (sorted by total contamination)', fontsize=12, fontweight='bold', fontfamily='Arial')
-    ax.set_ylabel('Contamination Type', fontsize=12, fontweight='bold', fontfamily='Arial')
-    ax.set_yticklabels(['PhiX174', 'Vector/Plasmid'], rotation=0, fontsize=11, fontfamily='Arial')
+    # Formatting with Arial font
+    ax.set_ylabel('Sample (sorted by total contamination)', fontsize=12, fontweight='bold', fontfamily='Arial')
+    ax.set_xlabel('Contamination Type', fontsize=12, fontweight='bold', fontfamily='Arial')
+    ax.set_xticklabels(['PhiX174', 'Vector/Plasmid'], rotation=0, fontsize=11, fontfamily='Arial')
 
-    # Adjust x-axis label rotation and font size based on sample count
-    label_fontsize = 7 if n_samples > 40 else 8 if n_samples > 30 else 9
-    xticklabels = ax.get_xticklabels()
-    ax.set_xticklabels(xticklabels, rotation=90, fontsize=label_fontsize, fontfamily='Arial')
+    # Adjust y-axis label font size based on display sample count
+    label_fontsize = 7 if n_display > 50 else 8 if n_display > 30 else 9
+    yticklabels = ax.get_yticklabels()
+    ax.set_yticklabels(yticklabels, rotation=0, fontsize=label_fontsize, fontfamily='Arial')
 
     # Color outlier sample names in red
-    xticklabels = ax.get_xticklabels()
-    for i, label in enumerate(xticklabels):
+    yticklabels = ax.get_yticklabels()
+    for i, label in enumerate(yticklabels):
         if label.get_text() in outlier_samples:
             label.set_color('#DC3545')
             label.set_fontweight('bold')
 
     # Title with sample count (matching rRNA style)
-    ax.set_title(f'Contamination Heatmap (n={n_samples})\nPhiX174 + Vector/Plasmid Detection',
+    ax.set_title(f'Contamination Heatmap (n={n_samples}){title_suffix}\nPhiX174 + Vector/Plasmid Detection',
                 fontsize=14, fontweight='bold', fontfamily='Arial')
 
-    # Add statistics annotation with clean styling
+    # Add statistics annotation with clean styling (using full dataset stats)
     median_total = df['total_contamination_percent'].median()
     mean_total = df['total_contamination_percent'].mean()
     outlier_count = total_outliers.sum()
 
-    stats_text = f"Mean: {mean_total:.3f}%\nMedian: {median_total:.3f}%\nOutliers: {outlier_count}"
+    stats_text = f"Batch Mean: {mean_total:.3f}%\nBatch Median: {median_total:.3f}%\nTotal Outliers: {outlier_count}"
     ax.text(0.02, 0.98, stats_text, transform=ax.transAxes,
            verticalalignment='top', horizontalalignment='left',
            bbox=dict(boxstyle='round,pad=0.5', facecolor='white', alpha=0.9, edgecolor='#E5E5E5'),
@@ -381,18 +429,16 @@ def main():
     plt.rcParams['grid.color'] = '#E5E5E5'
     plt.rcParams['grid.alpha'] = 0.4
 
-    # Generate plots
+    # Generate plots (only those displayed in HTML report)
     print("\n" + "="*60)
-    print("GENERATING CONTAMINATION PLOTS WITH PROFESSIONAL STYLING")
+    print("GENERATING CONTAMINATION PLOTS FOR HTML REPORT")
     print("="*60 + "\n")
 
     plot_contamination_bars(df, output_prefix)
-    plot_contamination_boxes(df, output_prefix)
-    plot_contamination_scatter(df, output_prefix)
     plot_contamination_heatmap(df, output_prefix)
 
     print("\n" + "="*60)
-    print("CONTAMINATION PLOTS COMPLETE - STYLED TO MATCH rRNA HISTOGRAM")
+    print("CONTAMINATION PLOTS COMPLETE - BAR CHART AND HEATMAP FOR HTML")
     print("="*60 + "\n")
 
 

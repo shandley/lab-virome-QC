@@ -16,10 +16,14 @@
     <script src="https://cdn.plot.ly/plotly-2.26.0.min.js"></script>
 
     <style>
-        .status-pass { color: #28a745; font-weight: bold; }
-        .status-fail { color: #dc3545; font-weight: bold; }
         .status-warning { color: #ffc107; font-weight: bold; }
         .status-unknown { color: #6c757d; font-weight: bold; }
+
+        /* Quality category styling */
+        .quality-excellent { color: #28a745; font-weight: bold; }
+        .quality-good { color: #20c997; font-weight: bold; }
+        .quality-concerning { color: #ffc107; font-weight: bold; }
+        .quality-poor { color: #dc3545; font-weight: bold; }
 
         .outlier-highlight {
             background-color: #fff3cd !important;
@@ -161,7 +165,15 @@
                     <div class="card-body text-center">
                         <h3 class="card-title text-primary">{{ batch_statistics.total_samples }}</h3>
                         <p class="card-text">Total Samples</p>
-                        <small class="text-muted">Processed successfully</small>
+                        <small class="text-muted">
+                            {% if batch_statistics.total_samples > 200 %}
+                                Large dataset - outlier-focused visualization
+                            {% elif batch_statistics.total_samples > 50 %}
+                                Medium dataset - top contaminants highlighted
+                            {% else %}
+                                Complete sample visualization
+                            {% endif %}
+                        </small>
                     </div>
                 </div>
 
@@ -356,10 +368,17 @@
             <div class="filter-buttons">
                 <button class="btn btn-outline-primary" id="filter-all">All Samples</button>
                 <button class="btn btn-outline-warning" id="filter-outliers">
-                    Outliers Only
+                    Outliers Only ({{ batch_statistics.outlier_count }})
                     <i class="bi bi-info-circle" data-bs-toggle="tooltip" data-bs-placement="top"
                        data-bs-title="Shows samples with quality scores, contamination levels, or read processing metrics that deviate significantly from the batch median (using IQR statistical method)"></i>
                 </button>
+                {% if batch_statistics.total_samples > 50 %}
+                <button class="btn btn-outline-danger" id="filter-high-contamination">
+                    High Contamination
+                    <i class="bi bi-info-circle" data-bs-toggle="tooltip" data-bs-placement="top"
+                       data-bs-title="Shows samples with highest PhiX + vector contamination levels requiring attention"></i>
+                </button>
+                {% endif %}
             </div>
 
             <!-- Sample Table -->
@@ -419,6 +438,25 @@
         <section id="contamination-analysis" class="mb-5">
             <h2 class="section-title">Contamination Analysis</h2>
 
+            <!-- Large Dataset Notification -->
+            {% if batch_statistics.total_samples > 100 %}
+            <div class="alert alert-info" role="alert">
+                <h5><i class="bi bi-info-circle-fill"></i> Large Dataset Visualization Strategy</h5>
+                <p>With <strong>{{ batch_statistics.total_samples }}</strong> samples, visualizations are optimized for readability:</p>
+                <ul class="mb-2">
+                    <li><strong>Distribution histograms:</strong> Include all {{ batch_statistics.total_samples }} samples</li>
+                    <li><strong>Bar chart:</strong> Shows top highest contamination samples for readability</li>
+                    <li><strong>Heatmap:</strong> Shows all samples with contamination levels by type</li>
+                </ul>
+                <small class="text-muted"><i class="bi bi-lightbulb"></i> <strong>Why:</strong> Distribution plots show the complete picture, while bar charts focus on actionable outliers for readability.</small>
+            </div>
+            {% elif batch_statistics.total_samples > 50 %}
+            <div class="alert alert-info" role="alert">
+                <h5><i class="bi bi-info-circle-fill"></i> Focused Bar Chart</h5>
+                <p>With <strong>{{ batch_statistics.total_samples }}</strong> samples, the <strong>bar chart shows the top highest contamination samples</strong> for readability. Distribution histograms include all samples.</p>
+            </div>
+            {% endif %}
+
             <!-- Contamination Distribution -->
             <div class="row mb-3">
                 <div class="col-md-6">
@@ -451,8 +489,10 @@
                             <h5>Contamination Levels by Sample</h5>
                         </div>
                         <div class="card-body">
-                            {% if base64_images.contamination_bars %}
+                            {% if standalone_version and base64_images.contamination_bars %}
                             <img src="{{ base64_images.contamination_bars }}" alt="Contamination Bar Chart" class="img-fluid">
+                            {% elif not standalone_version and image_links.contamination_bars %}
+                            <img src="{{ image_links.contamination_bars }}" alt="Contamination Bar Chart" class="img-fluid">
                             {% else %}
                             <div class="text-center text-muted p-4">Contamination bar chart not available</div>
                             {% endif %}
@@ -469,8 +509,10 @@
                             <h5>Contamination Heatmap</h5>
                         </div>
                         <div class="card-body">
-                            {% if base64_images.contamination_heatmap %}
+                            {% if standalone_version and base64_images.contamination_heatmap %}
                             <img src="{{ base64_images.contamination_heatmap }}" alt="Contamination Heatmap" class="img-fluid">
+                            {% elif not standalone_version and image_links.contamination_heatmap %}
+                            <img src="{{ image_links.contamination_heatmap }}" alt="Contamination Heatmap" class="img-fluid">
                             {% else %}
                             <div class="text-center text-muted p-4">Contamination heatmap not available</div>
                             {% endif %}
@@ -491,8 +533,10 @@
                             </small>
                         </div>
                         <div class="card-body">
-                            {% if base64_images.primer_b_heatmap %}
+                            {% if standalone_version and base64_images.primer_b_heatmap %}
                             <img src="{{ base64_images.primer_b_heatmap }}" alt="Primer B Heatmap" class="img-fluid">
+                            {% elif not standalone_version and image_links.primer_b_heatmap %}
+                            <img src="{{ image_links.primer_b_heatmap }}" alt="Primer B Heatmap" class="img-fluid">
                             {% else %}
                             <div class="text-center text-muted p-4">Primer B heatmap not available</div>
                             {% endif %}
@@ -571,7 +615,24 @@
                     }
                 );
                 table.draw();
-                $('.btn-outline-primary, .btn-outline-warning').removeClass('active');
+                $('.btn-outline-primary, .btn-outline-warning, .btn-outline-danger').removeClass('active');
+                $(this).addClass('active');
+
+                // Remove custom filter after use
+                $.fn.dataTable.ext.search.pop();
+            });
+
+            $('#filter-high-contamination').click(function() {
+                // Filter for samples with high PhiX + Vector contamination (>1%)
+                $.fn.dataTable.ext.search.push(
+                    function(settings, data, dataIndex) {
+                        const sampleData = reportData.samples[dataIndex];
+                        const totalContamination = (sampleData.phix_percent || 0) + (sampleData.vector_percent || 0);
+                        return totalContamination > 1.0;
+                    }
+                );
+                table.draw();
+                $('.btn-outline-primary, .btn-outline-warning, .btn-outline-danger').removeClass('active');
                 $(this).addClass('active');
 
                 // Remove custom filter after use
@@ -887,9 +948,17 @@
     <footer class="mt-5 py-3 border-top">
         <div class="container text-center text-muted">
             <small>
-                ViromeQC Report |
+                Virome QC Report
+                {% if standalone_version %}
+                <span class="badge bg-info ms-2">Standalone Version</span>
+                (Self-contained with embedded images for sharing)
+                {% else %}
+                <span class="badge bg-success ms-2">Lightweight Version</span>
+                (External images for fast loading)
+                {% endif %}
+                |
                 <a href="#" data-bs-toggle="modal" data-bs-target="#methodologyModal">Statistical Methods</a> |
-                Generated on {{ current_timestamp }}
+                Generated on {{ timestamp }}
             </small>
         </div>
     </footer>

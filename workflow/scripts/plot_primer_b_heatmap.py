@@ -45,10 +45,17 @@ def natural_sort_key(s):
 heatmap_data = heatmap_data[sorted(heatmap_data.columns, key=natural_sort_key)]
 
 # Sort rows by dominant primer B for better visualization
-sample_order = summary_df.sort_values(['dominant_pb', 'sample'])['sample'].tolist()
+# Only include samples that have primer B distribution data
+samples_with_data = set(heatmap_data.index)
+summary_with_data = summary_df[summary_df['sample'].isin(samples_with_data)]
+sample_order = summary_with_data.sort_values(['dominant_pb', 'sample'])['sample'].tolist()
 heatmap_data = heatmap_data.reindex(sample_order)
 
-# Create figure
+# Create figure with appropriate scaling
+n_samples = len(heatmap_data)
+n_variants = len(heatmap_data.columns)
+
+# Calculate reasonable figure size - show all samples but with reasonable scaling
 fig_height = max(8, len(heatmap_data) * 0.3)  # Scale height with number of samples
 fig_width = max(12, len(heatmap_data.columns) * 0.4)  # Scale width with number of primer B variants
 

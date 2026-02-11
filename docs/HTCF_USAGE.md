@@ -275,7 +275,7 @@ Key outputs:
 ```
 results/
 ├── multiqc/multiqc_report.html         # Main QC dashboard
-├── reports/sample_qc_flags.tsv         # Pass/fail flags
+├── reports/sample_qc_metrics.tsv       # Quality assessment metrics
 ├── reports/read_counts.tsv             # Read counts per step
 ├── viromeqc/                           # ViromeQC scores
 ├── clean_reads/                        # Final clean FASTQ files
@@ -291,7 +291,7 @@ results/
 scp leranwang@login.htcf.wustl.edu:/path/to/lab-virome-QC/results/multiqc/multiqc_report.html .
 
 # Download QC flags
-scp leranwang@login.htcf.wustl.edu:/path/to/lab-virome-QC/results/reports/sample_qc_flags.tsv .
+scp leranwang@login.htcf.wustl.edu:/path/to/lab-virome-QC/results/reports/sample_qc_metrics.tsv .
 
 # Download all results (if small enough)
 scp -r leranwang@login.htcf.wustl.edu:/path/to/lab-virome-QC/results/ .

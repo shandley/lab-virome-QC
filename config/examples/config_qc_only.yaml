@@ -34,7 +34,6 @@ sample_auto_detection:
 
 # QC thresholds
 qc_thresholds:
-  min_enrichment_score: 10
   max_host_percent: 10
   max_rrna_percent: 20
   min_final_reads: 100000
